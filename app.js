@@ -692,11 +692,11 @@ window.attemptLogin = async function() {
     try {
         console.log("Login Attempted!");
         
-        // Wait for Supabase user sync to complete before validating
+        // Always re-sync users from Supabase before validating credentials
         const loginBtn = document.querySelector('#login-form button[type="submit"]');
-        if (loginBtn) { loginBtn.disabled = true; loginBtn.innerText = 'Chargement...'; }
-        await window.usersReady;
-        if (loginBtn) { loginBtn.disabled = false; loginBtn.setAttribute('data-i18n','login_btn'); loginBtn.innerText = t('login_btn'); }
+        if (loginBtn) { loginBtn.disabled = true; loginBtn.innerText = 'Vérification...'; }
+        await syncUsers();
+        if (loginBtn) { loginBtn.disabled = false; loginBtn.innerText = t('login_btn') || 'Se connecter'; }
 
         window.showToast("C'est en cours...", "success");
 
