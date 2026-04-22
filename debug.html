@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Debug</title>
+</head>
+<body>
+    <h1>JavaScript Error Log</h1>
+    <pre id="log"></pre>
+    <script>
+        window.onerror = function(msg, url, line, col, error) {
+            document.getElementById('log').innerText += "Error: " + msg + "\nLine: " + line + "\nColumn: " + col + "\n\n";
+            return true; 
+        };
+    </script>
+    <script src="app.js"></script>
+    <script>
+        document.getElementById('log').innerText += "If you only see this, app.js has no global syntax error!\n";
+    </script>
+</body>
+</html>
