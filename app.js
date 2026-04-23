@@ -1279,7 +1279,6 @@ window.renderView = function(viewName) {
                             `).join('')}
                         </tbody>
                     </table>
-                    ` : `<div style="text-align:center; padding:15px; color:#9ca3af; font-size:0.85rem;">${currentLang==='ar'?'لا توجد طلبات معلقة حالياً':'Aucune commande en attente.'}</div>`}
                 </div>
             </div>`;
 
