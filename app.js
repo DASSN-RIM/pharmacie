@@ -1174,7 +1174,7 @@ window.renderView = function(viewName) {
                         <tbody>
                             ${pendingOrders.map(o => `
                             <tr>
-                                <td><strong>#${o.id}</strong></td>
+                                <td><strong>${o.id && o.id.startsWith('BC-') ? o.id : '#' + o.id}</strong></td>
                                 <td>${state.pharmacies[o.pharmacyId]?.name?.fr || 'Pharmacie #'+o.pharmacyId}</td>
                                 <td>${o.workerName}</td>
                                 <td>${new Date(o.date).toLocaleDateString('fr-FR')}</td>
@@ -1267,7 +1267,7 @@ window.renderView = function(viewName) {
                         <tbody>
                             ${pendingOrders.map(o => `
                             <tr>
-                                <td><strong>#${o.id}</strong></td>
+                                <td><strong>${o.id && o.id.startsWith('BC-') ? o.id : '#' + o.id}</strong></td>
                                 <td>${state.pharmacies[o.pharmacyId]?.name?.fr || 'Pharmacie #'+o.pharmacyId}</td>
                                 <td>${new Date(o.date).toLocaleDateString('fr-FR')}</td>
                                 <td>
