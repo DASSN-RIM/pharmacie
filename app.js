@@ -371,7 +371,8 @@ const defaultState = {
     pendingReturns: [],
     patients: [],
     receipts: [],
-    orders: []
+    orders: [],
+    counters: { delivery: 0, order: 0 }
 };
 
 let state = defaultState;
@@ -404,7 +405,7 @@ async function loadDataFromSupabase() {
         console.log("Fetching data from Supabase...");
         
         // Parallel queries using pagination to bypass the 1000 items API hard cap
-        const [meds, pharms, stocks, trans, disps, pats, ords, remoteReceipts] = await Promise.all([
+        const [meds, pharms, stocks, trans, disps, pats, ords, remoteReceipts, counters] = await Promise.all([
             fetchAllRecords('medicines'),
             _supabase.from('pharmacies').select('*'), // Small enough, no pagination needed
             fetchAllRecords('pharmacy_stock', '*, medicines(*)'),
@@ -412,7 +413,8 @@ async function loadDataFromSupabase() {
             fetchAllRecords('dispensations'),
             fetchAllRecords('patients'),
             fetchAllRecords('orders'),
-            fetchAllRecords('receipts').catch(e => { console.warn('Receipts table missing or empty', e); return { data: null }; })
+            fetchAllRecords('receipts').catch(e => { console.warn('Receipts table missing or empty', e); return { data: null }; }),
+            _supabase.from('app_counters').select('*')
         ]);
 
         if (meds.error) throw meds.error;
@@ -477,7 +479,7 @@ async function loadDataFromSupabase() {
         });
 
         // Map Orders
-        state.orders = ords.data.map(o => ({
+        state.orders = ords_data.data.map(o => ({
             id: o.id, date: o.date, pharmacyId: o.pharmacy_id, 
             workerName: o.worker_name, status: o.status, items: o.items 
         }));
@@ -513,6 +515,59 @@ async function loadDataFromSupabase() {
         window.showToast("Erreur DB: " + errMsg, "error");
     }
 }
+
+// =============================================
+// COUNTER LOGIC
+// =============================================
+window.getNextCounterValue = async function(type) {
+    try {
+        const { data, error } = await _supabase
+            .from('app_counters')
+            .select('value')
+            .eq('id', type)
+            .single();
+        
+        if (error) throw error;
+        
+        const newValue = (data.value || 0) + 1;
+        
+        const { error: updateError } = await _supabase
+            .from('app_counters')
+            .update({ value: newValue, updated_at: new Date().toISOString() })
+            .eq('id', type);
+            
+        if (updateError) throw updateError;
+        
+        // Update local state
+        state.counters[type] = newValue;
+        
+        const prefix = type === 'delivery' ? 'BL' : 'BC';
+        return `${prefix}-${newValue.toString().padStart(4, '0')}`;
+    } catch (err) {
+        console.error("Counter error:", err);
+        return (type === 'delivery' ? 'TRN-' : 'CMD-') + new Date().getTime().toString().slice(-6);
+    }
+};
+
+window.resetCounters = async function() {
+    const confirm = await window.showCustomDialog({ 
+        title: "Réinitialisation", 
+        msg: "Voulez-vous vraiment remettre les compteurs à ZERO (0001) ?", 
+        type: 'confirm', 
+        icon: 'fa-rotate' 
+    });
+    
+    if (confirm) {
+        try {
+            await _supabase.from('app_counters').update({ value: 0 }).in('id', ['delivery', 'order']);
+            await loadDataFromSupabase();
+            window.showToast("Compteurs réinitialisés à 0");
+        } catch (err) {
+            console.error(err);
+            window.showToast("Erreur lors de la réinitialisation", "error");
+        }
+    }
+};
 
 window.migrateLocalData = async function() {
     const localData = localStorage.getItem('pharmacy_inventory_state');
@@ -1498,7 +1553,7 @@ window.renderView = function(viewName) {
                 
                 // Bulk insert transfers
                 await _supabase.from('transfers').insert(transferInserts);
-                const barcode = "TRN-" + new Date().getTime().toString().slice(-6);
+                const barcode = await window.getNextCounterValue('delivery');
                 
                 const newReceipt = {
                     id: barcode, date: new Date().toISOString(), type: 'DISTRIBUTION',
@@ -2038,6 +2093,9 @@ window.renderView = function(viewName) {
 
         content = `
             <div class="page-header" style="justify-content: flex-end; gap: 10px;">
+                <button class="primary-btn" style="background:var(--danger-red);" onclick="window.resetCounters()">
+                    <i class="fa-solid fa-rotate"></i> Réinitialiser les Compteurs (0)
+                </button>
                 <button class="primary-btn" onclick="window.addPharmacy()">
                     <i class="fa-solid fa-plus"></i> Nouvelle Pharmacie
                 </button>
@@ -2709,7 +2767,7 @@ window.renderPharmacy = function(pharmId, subView = 'all') {
                 return;
             }
 
-            const barcode = "CMD-" + new Date().getTime().toString().slice(-6);
+            const barcode = await window.getNextCounterValue('order');
             // Build worker name safely with multiple fallbacks
             let workerName = '---';
             if (currentUser) {
