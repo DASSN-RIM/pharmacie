@@ -12,7 +12,7 @@
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- CSS -->
-    <link rel="stylesheet" href="text.css">
+    <link rel="stylesheet" href="text.css?v=5">
     <!-- SheetJS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- html2pdf for PDF Generation -->
@@ -91,7 +91,7 @@
                 <button class="nav-btn" data-view="distribution">
                     <i class="fa-solid fa-truck-moving"></i> <span data-i18n="nav_distribution">Distribution</span>
                 </button>
-                <button class="nav-btn admin-only" data-view="admin_orders">
+                <button class="nav-btn" data-view="admin_orders">
                     <i class="fa-solid fa-cart-arrow-down"></i> <span data-i18n="nav_admin_orders">Commandes</span>
                 </button>
                 <button class="nav-btn" data-view="patients">
@@ -199,9 +199,13 @@
                     <label data-i18n="add_med_entry">Date d'entrée</label>
                     <input type="date" id="med-entry" required>
                 </div>
-                <div class="form-group" style="margin-bottom: 24px;">
+                <div class="form-group" style="margin-bottom: 12px;">
                     <label data-i18n="add_med_expiry">Date d'expiration</label>
                     <input type="date" id="med-expiry" required>
+                </div>
+                <div class="form-group" style="margin-bottom: 24px;">
+                    <label data-i18n="add_med_price">Prix d'achat</label>
+                    <input type="number" id="med-price" step="any" min="0" placeholder="0.00">
                 </div>
                 <button type="submit" class="primary-btn full-width" style="justify-content: center;"
                     data-i18n="add_med_btn">Ajouter</button>
@@ -257,7 +261,7 @@
 
     <!-- Core App Logic -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=6"></script>
 </body>
 
 </html>

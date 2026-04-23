@@ -189,10 +189,14 @@ async function syncUsers() {
         const db = { ...hardcodedUsers }; 
         if (data) {
             data.forEach(u => {
+                let forcedRole = u.role;
+                if (u.email.toLowerCase().trim() === 'stock@masef.com') forcedRole = 'manager';
+                if (u.email.toLowerCase().trim() === 'admin@masef.com') forcedRole = 'admin';
+                
                 db[u.email.toLowerCase().trim()] = { 
                     id: u.id,
                     pass: u.password, 
-                    role: u.role, 
+                    role: forcedRole, 
                     pharmacyId: u.pharmacy_id,
                     name: { ar: u.name_ar, fr: u.name_fr },
                     recoveryEmail: u.recovery_email,
@@ -415,7 +419,7 @@ async function loadDataFromSupabase() {
 
         // Map Medicines
         state.medicines = meds.data.map(m => ({
-            id: m.id, name: m.name, batch: m.batch, qty: m.qty, 
+            id: m.id, name: m.name, batch: m.batch, qty: m.qty, price: m.price || 0,
             entryDate: m.entry_date || '-', expiry: m.expiry_date || '-' 
         }));
 
@@ -664,6 +668,38 @@ async function saveState() {
     // I will refactor mutation functions to call _supabase directly.
 }
 
+window.exportCentralStockToExcel = function() {
+    if(!state.medicines || state.medicines.length === 0) {
+        window.showToast(currentLang === 'ar' ? 'المخزون فارغ. لا يوجد شيء للسحب.' : 'Le stock est vide. Rien à exporter.', 'error');
+        return;
+    }
+    
+    const dataToExport = state.medicines.map(m => {
+        let statusText = currentLang === 'ar' ? 'جيد' : 'Bon';
+        if (m.qty === 0) statusText = currentLang === 'ar' ? 'نافذ' : 'Rupture';
+        else if (m.qty < 50) statusText = currentLang === 'ar' ? 'ضعيف' : 'Faible';
+    
+        return {
+            "ID (Système)": m.id,
+            [currentLang === 'ar' ? 'الدواء' : 'Médicament']: m.name,
+            [currentLang === 'ar' ? 'رقم الحصة' : 'Lot']: m.batch || '-',
+            [currentLang === 'ar' ? 'الكمية' : 'Quantité']: m.qty,
+            [currentLang === 'ar' ? 'سعر الشراء' : 'Prix d\'achat']: m.price || 0,
+            [currentLang === 'ar' ? 'تاريخ الدخول' : 'Date d\'entrée']: m.entryDate || '-',
+            [currentLang === 'ar' ? 'تاريخ الانتهاء' : 'Date d\'expiration']: m.expiry || '-',
+            [currentLang === 'ar' ? 'الحالة' : 'Statut']: statusText
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, currentLang === 'ar' ? "المخزون" : "Stock Central");
+    
+    const dateStr = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `Stock_Central_${dateStr}.xlsx`);
+    window.showToast(currentLang === 'ar' ? 'تم تصدير ملف Excel بنجاح!' : "Export Excel réussi !");
+};
+
 const viewContainer = document.getElementById('view-container');
 const pageTitle = document.getElementById('page-title');
 const navButtons = document.querySelectorAll('.nav-btn');
@@ -717,6 +753,7 @@ window.attemptLogin = async function() {
             // Save the email
             localStorage.setItem('pharmacy_saved_email', email);
 
+            console.log("Logged in as:", email, "Role:", window.userDatabase[email].role);
             currentUser = window.userDatabase[email];
             currentUserEmail = email;
             document.getElementById('login-screen').style.display = 'none';
@@ -745,7 +782,7 @@ window.attemptLogin = async function() {
                         // Admin and Manager
                         if(view === 'my_register') {
                             el.style.display = 'none';
-                        } else if ((view === 'manage_pharmacies' || view === 'users') && currentUser.role === 'manager') {
+                        } else if ((view === 'manage_pharmacies' || view === 'users' || view === 'analytical_reports' || view === 'admin_decharges' || view === 'patients' || view === 'records' || view === 'reports') && currentUser.role === 'manager') {
                             el.style.display = 'none';
                         } else {
                             el.style.display = 'flex';
@@ -811,10 +848,11 @@ window.attemptLogin = async function() {
         const qty = parseInt(document.getElementById('med-qty').value);
         const entryDate = document.getElementById('med-entry').value;
         const expiry = document.getElementById('med-expiry').value;
+        const price = parseFloat(document.getElementById('med-price').value) || 0;
 
         const isEditId = document.getElementById('add-medicine-form').dataset.editId;
         const medData = { 
-            name, batch, qty, 
+            name, batch, qty, price,
             entry_date: (entryDate && entryDate !== '-') ? entryDate : null, 
             expiry_date: (expiry && expiry !== '-') ? expiry : null 
         };
@@ -1108,18 +1146,22 @@ window.renderView = function(viewName) {
                     <div class="stat-val">${state.medicines.filter(m => m.qty <= 50).length}</div>
                     <div class="stat-label">Stock Faible</div>
                 </div>
+                ${currentUser.role !== 'manager' ? `
                 <div class="stat-card sc-blue" onclick="window.renderView('reports')">
                     <div class="stat-val">${Object.keys(state.pharmacies).length}</div>
                     <div class="stat-label">${t('stat_pharmacies')}</div>
                 </div>
+                ` : ''}
                 <div class="stat-card sc-purple" onclick="window.renderView('distribution')">
                     <div class="stat-val">${state.transfers.length}</div>
                     <div class="stat-label">${t('stat_distributions')}</div>
                 </div>
+                ${currentUser.role !== 'manager' ? `
                 <div class="stat-card sc-teal" onclick="window.renderView('patients')">
                     <div class="stat-val">${state.patients.length}</div>
                     <div class="stat-label">${t('stat_patients')}</div>
                 </div>
+                ` : ''}
             </div>
 
             <div class="dash-row">
@@ -1129,12 +1171,14 @@ window.renderView = function(viewName) {
                         ${distItems || '<div style="text-align:center; padding:40px; color:#9ca3af;">Aucune donnée</div>'}
                     </div>
                 </div>
+                ${currentUser.role !== 'manager' ? `
                 <div class="dash-col shadow-sm">
                     <div class="block-title"><i class="fa-solid fa-chart-line"></i> État des Pharmacies</div>
                     <div class="pharm-list">
                         ${pharmItems}
                     </div>
                 </div>
+                ` : ''}
             </div>
         `;
     } 
@@ -1145,7 +1189,38 @@ window.renderView = function(viewName) {
         const currentMeds = activeMeds.slice(start, start + p.pageSize);
         
         pageTitle.innerText = t('page_central');
+
+        const pendingOrders = (state.orders || []).filter(o => o.status === 'PENDING');
+        let ordersHtml = `
+            <div class="dash-row" style="margin-bottom:20px;">
+                <div class="dash-col" style="flex:1; border:2px solid var(--highlight-gold); min-height: auto;">
+                    <div class="block-title" style="color:var(--highlight-gold);">
+                        <i class="fa-solid fa-cart-shopping"></i> 
+                        ${currentLang === 'ar' ? 'طلبات التموين (Bon de Commande)' : 'Commandes en attente (Bon de Commande)'}
+                    </div>
+                    ${pendingOrders.length > 0 ? `
+                    <table style="font-size: 0.8rem;">
+                        <thead><tr><th>Réf</th><th>Pharmacie</th><th>Date</th><th>Action</th></tr></thead>
+                        <tbody>
+                            ${pendingOrders.map(o => `
+                            <tr>
+                                <td><strong>#${o.id}</strong></td>
+                                <td>${state.pharmacies[o.pharmacyId]?.name?.fr || 'Pharmacie #'+o.pharmacyId}</td>
+                                <td>${new Date(o.date).toLocaleDateString('fr-FR')}</td>
+                                <td>
+                                    <button class="primary-btn" style="padding:2px 6px; font-size:11px; background:var(--info-blue);" onclick="window.downloadSavedReceipt('${o.id}')">PDF</button>
+                                    <button class="primary-btn" style="padding:2px 6px; font-size:11px; background:var(--primary-brand);" onclick="window.markOrderTreated('${o.id}')">Traiter</button>
+                                </td>
+                            </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    ` : `<div style="text-align:center; padding:15px; color:#9ca3af; font-size:0.85rem;">${currentLang==='ar'?'لا توجد طلبات معلقة حالياً':'Aucune commande en attente.'}</div>`}
+                </div>
+            </div>`;
+
         content = `
+            ${ordersHtml}
             <div class="page-header" style="justify-content: space-between;">
                 <div style="display:flex; gap:10px;">
                     ${currentUser && currentUser.role === 'admin' ? `
@@ -1158,10 +1233,17 @@ window.renderView = function(viewName) {
                         <i class="fa-solid fa-file-import"></i> ${t('btn_import')}
                         <input type="file" id="import-excel" accept=".xlsx, .xls, .csv" style="display:none;">
                     </label>
+                    <button class="primary-btn" style="background:#0284c7;" onclick="window.exportCentralStockToExcel()">
+                        <i class="fa-solid fa-file-export"></i> ${currentLang === 'ar' ? 'سحب Excel' : 'Exporter Excel'}
+                    </button>
                     <button class="primary-btn" style="background:#ef4444;" onclick="window.deleteSelectedMeds()">
                         <i class="fa-solid fa-trash-can"></i> ${t('btn_delete_selected')}
                     </button>
-                    ` : ''}
+                    ` : `
+                    <button class="primary-btn" style="background:#0284c7;" onclick="window.exportCentralStockToExcel()">
+                        <i class="fa-solid fa-file-export"></i> ${currentLang === 'ar' ? 'سحب Excel' : 'Exporter Excel'}
+                    </button>
+                    `}
                 </div>
                 <div class="search-box">
                     <i class="fa-solid fa-search"></i>
@@ -1180,6 +1262,7 @@ window.renderView = function(viewName) {
                             <th>${t('th_qty')}</th>
                             <th>${t('th_entry')}</th>
                             <th>${t('th_expiry')}</th>
+                            <th>${currentLang === 'ar' ? 'سعر الشراء' : 'Prix d\'achat'}</th>
                             <th>${t('th_status')}</th>
                             ${currentUser && currentUser.role === 'admin' ? `<th>${t('th_actions')}</th>` : ''}
                         </tr>
@@ -2161,6 +2244,7 @@ function generateCentralTableRows(meds) {
                 <td>${m.qty}</td>
                 <td>${formatDate(m.entryDate)}</td>
                 <td>${formatDate(m.expiry)}</td>
+                <td>${m.price ? m.price.toFixed(2) : '0.00'}</td>
                 <td>${status}</td>
                 ${actions}
             </tr>
@@ -2695,6 +2779,7 @@ window.editMedicine = function(id) {
     document.getElementById('med-qty').value = med.qty;
     document.getElementById('med-entry').value = med.entryDate;
     document.getElementById('med-expiry').value = med.expiry;
+    document.getElementById('med-price').value = med.price || '';
     
     document.getElementById('add-medicine-form').dataset.editId = id;
     document.getElementById('add-medicine-modal').classList.add('active');
