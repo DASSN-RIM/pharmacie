@@ -3562,6 +3562,7 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
 
             if (!matchedPatient) {
                 window.showToast(t('error_unregistered_patient') || "Patient introuvable dans le système. Veuillez d'abord l'enregistrer.", 'error');
+                dispForm.dataset.submitting = 'false';
                 return;
             }
 
@@ -3574,6 +3575,7 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
                         : 'Ce patient est inactif. Contactez l\'administrateur pour le réactiver.',
                     icon: 'fa-ban'
                 });
+                dispForm.dataset.submitting = 'false';
                 return;
             }
 
@@ -3673,7 +3675,7 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
                 }
             }
 
-            if (!valid || items.length === 0) return;
+            if (!valid || items.length === 0) { dispForm.dataset.submitting = 'false'; return; }
 
             // --- REGLE DES 28 JOURS ---
             const twentyEightDaysAgo = new Date();
@@ -3712,7 +3714,7 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
                 window.showToast(currentLang === 'ar' ? 'تم تجاوز حاجز الـ 28 يوماً استثنائياً' : 'Délivrance exceptionnelle approuvée', 'info');
             }
             window._isExceptional = false;
-            if (!valid) return;
+            if (!valid) { dispForm.dataset.submitting = 'false'; return; }
 
             try {
                 const barcode = await window.getNextCounterValue('dispense');
