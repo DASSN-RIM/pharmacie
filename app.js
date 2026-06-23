@@ -1747,7 +1747,7 @@ window.renderView = async function (viewName) {
                 pageSize: p.pageSize,
                 search: p.search,
                 searchCol: 'name',
-                order: p.order || { col: 'name', ascending: true }
+                order: p.order || { col: 'id', ascending: false }
             });
             p.total = total;
 
