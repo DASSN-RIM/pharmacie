@@ -105,6 +105,50 @@ window.formatDate = function (dateStr) {
     return dateStr;
 };
 
+window.attachTableSort = function(tableEl) {
+    if (!tableEl) return;
+    const ths = Array.from(tableEl.querySelectorAll('thead th'));
+    ths.forEach((th, colIdx) => {
+        if (th.querySelector('input[type="checkbox"]') || th.querySelector('button')) return;
+        if (!th.textContent.trim()) return;
+        th.style.cursor = 'pointer';
+        th.style.userSelect = 'none';
+        th._sortDir = null;
+        const arrow = document.createElement('span');
+        arrow.className = 'sort-arrow';
+        arrow.style.cssText = 'margin-left:4px; opacity:0.35; font-size:0.7em; vertical-align:middle;';
+        arrow.textContent = '↕';
+        th.appendChild(arrow);
+        th.addEventListener('click', () => {
+            const wasDir = th._sortDir;
+            ths.forEach(h => { h._sortDir = null; const a = h.querySelector('.sort-arrow'); if (a) { a.textContent = '↕'; a.style.opacity = '0.35'; } });
+            th._sortDir = wasDir === 'asc' ? 'desc' : 'asc';
+            arrow.textContent = th._sortDir === 'asc' ? '↑' : '↓';
+            arrow.style.opacity = '1';
+            const tbody = tableEl.querySelector('tbody');
+            if (!tbody) return;
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            if (rows.length <= 1) return;
+            const parseVal = (text) => {
+                const s = text.trim();
+                const dm = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+                if (dm) return new Date(+dm[3], +dm[2] - 1, +dm[1]).getTime();
+                const n = parseFloat(s.replace(/\s/g, '').replace(',', '.'));
+                if (!isNaN(n) && /^[\d\s,.\-]+$/.test(s)) return n;
+                return s.toLowerCase();
+            };
+            rows.sort((a, b) => {
+                const aV = parseVal(a.cells[colIdx]?.textContent || '');
+                const bV = parseVal(b.cells[colIdx]?.textContent || '');
+                if (aV < bV) return th._sortDir === 'asc' ? -1 : 1;
+                if (aV > bV) return th._sortDir === 'asc' ? 1 : -1;
+                return 0;
+            });
+            rows.forEach(r => tbody.appendChild(r));
+        });
+    });
+};
+
 window.formatReportPeriod = function (pKey, timeframe) {
     if (!pKey || pKey === '-' || pKey === 'undefined') return '-';
     if (timeframe === 'day') return window.formatDate(pKey);
@@ -1793,6 +1837,7 @@ window.renderView = async function (viewName) {
                 ${renderPaginationControls('central')}
             `;
             viewContainer.innerHTML = content;
+            window.attachTableSort(document.getElementById('central-table'));
 
             // Re-attach Search Listener with Debounce
             const searchInput = document.getElementById('search-med');
@@ -1882,7 +1927,7 @@ window.renderView = async function (viewName) {
                         <input type="text" id="search-dist-history" placeholder="${t('search_placeholder')}" value="${pagination.transfers.search || ''}">
                     </div>
                 </div>
-                <table>
+                <table id="dist-history-table">
                     <thead>
                         <tr>
                             <th>${t('th_date')}</th>
@@ -1908,6 +1953,7 @@ window.renderView = async function (viewName) {
         `;
 
         viewContainer.innerHTML = content;
+        window.attachTableSort(document.getElementById('dist-history-table'));
 
         // Search Listener for Distribution History
         const distSearchInput = document.getElementById('search-dist-history');
@@ -2370,6 +2416,7 @@ window.renderView = async function (viewName) {
                 ${renderPaginationControls('patients')}
             `;
             viewContainer.innerHTML = content;
+            window.attachTableSort(document.getElementById('patients-table'));
 
             // Search Listener
             const searchInput = document.getElementById('search-patient');
@@ -2438,6 +2485,7 @@ window.renderView = async function (viewName) {
                 ${renderPaginationControls('expired')}
             `;
             viewContainer.innerHTML = content;
+            window.attachTableSort(document.getElementById('expired-table'));
 
             // Search Listener for Expired
             const expSearchInput = document.getElementById('search-expired');
@@ -2603,6 +2651,7 @@ window.renderView = async function (viewName) {
                 ${renderPaginationControls('records')}
             `;
             viewContainer.innerHTML = content;
+            window.attachTableSort(document.getElementById('records-table'));
 
             // Search Listener
             const searchInput = document.getElementById('search-record');
@@ -3343,7 +3392,7 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
                 </div>
             </div>
             <div class="table-container shadow-sm">
-                <table>
+                <table id="pharm-stock-table-${pharmId}">
                     <thead>
                         <tr style="background:#f8fafc;">
                             ${isFullAdmin ? `<th style="width:50px; text-align:center;"><input type="checkbox" onchange="window.toggleAllPharmacyStock(this, ${pharmId})"></th>` : ''}
@@ -3439,7 +3488,7 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
                     </div>
                 </div>
                 <div class="table-container shadow-sm">
-                    <table>
+                    <table id="pharm-hist-table-${pharmId}">
                         <thead><tr><th>Réf.</th><th>Date</th><th>Patient</th><th>Médicament</th><th>Qté</th><th>Staff</th></tr></thead>
                         <tbody>
                             ${dispHistory.map(d => `
@@ -3471,6 +3520,8 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
     }
 
     viewContainer.innerHTML = dashboardHeaderHtml + tabsHtml + finalBody;
+    window.attachTableSort(document.getElementById(`pharm-stock-table-${pharmId}`));
+    window.attachTableSort(document.getElementById(`pharm-hist-table-${pharmId}`));
 
     // --- LISTENERS ---
     const stockSearch = document.getElementById('search-pharm-stock-main');
