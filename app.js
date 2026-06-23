@@ -472,8 +472,10 @@ let pagination = {
 window.activePharmacyId = null;
 window.activeSubView = 'all';
 
-async function fetchTableData(table, { page = 1, pageSize = 25, search = '', searchCol = 'name', filters = {}, order = { col: 'id', ascending: false }, select = '*' } = {}) {
+async function fetchTableData(table, { page = 1, pageSize = 25, search = '', searchCol = 'name', filters = {}, order = { col: 'id', ascending: false }, select = '*', extraOrFilter = null } = {}) {
     let query = _supabase.from(table).select(select, { count: 'exact' });
+
+    if (extraOrFilter) query = query.or(extraOrFilter);
 
     if (search) {
         if (table === 'medicines') {
@@ -1742,12 +1744,14 @@ window.renderView = async function (viewName) {
         const p = pagination.central;
 
         try {
+            const todayIso = new Date().toISOString().split('T')[0];
             const { data: meds, total } = await fetchTableData('medicines', {
                 page: p.currentPage,
                 pageSize: p.pageSize,
                 search: p.search,
                 searchCol: 'name',
-                order: p.order || { col: 'id', ascending: false }
+                order: p.order || { col: 'id', ascending: false },
+                extraOrFilter: `expiry_date.gte.${todayIso},expiry_date.is.null`
             });
             p.total = total;
 
@@ -1881,7 +1885,8 @@ window.renderView = async function (viewName) {
         pageTitle.innerText = t('page_distribution');
 
         const { data: allMedsRaw } = await _supabase.rpc('get_all_medicines');
-        const activeMeds = (allMedsRaw || []).filter(m => m.qty > 0);
+        const _todayDist = new Date().toISOString().split('T')[0];
+        const activeMeds = (allMedsRaw || []).filter(m => m.qty > 0 && (!m.expiry_date || m.expiry_date >= _todayDist));
 
         content += `
             ${(currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager')) ? `
