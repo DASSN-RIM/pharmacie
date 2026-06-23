@@ -105,7 +105,7 @@ window.formatDate = function (dateStr) {
     return dateStr;
 };
 
-window.attachTableSort = function(tableEl) {
+window.attachTableSort = function(tableEl, onSortCb) {
     if (!tableEl) return;
     const ths = Array.from(tableEl.querySelectorAll('thead th'));
     ths.forEach((th, colIdx) => {
@@ -125,26 +125,31 @@ window.attachTableSort = function(tableEl) {
             th._sortDir = wasDir === 'asc' ? 'desc' : 'asc';
             arrow.textContent = th._sortDir === 'asc' ? '↑' : '↓';
             arrow.style.opacity = '1';
-            const tbody = tableEl.querySelector('tbody');
-            if (!tbody) return;
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            if (rows.length <= 1) return;
-            const parseVal = (text) => {
-                const s = text.trim();
-                const dm = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-                if (dm) return new Date(+dm[3], +dm[2] - 1, +dm[1]).getTime();
-                const n = parseFloat(s.replace(/\s/g, '').replace(',', '.'));
-                if (!isNaN(n) && /^[\d\s,.\-]+$/.test(s)) return n;
-                return s.toLowerCase();
-            };
-            rows.sort((a, b) => {
-                const aV = parseVal(a.cells[colIdx]?.textContent || '');
-                const bV = parseVal(b.cells[colIdx]?.textContent || '');
-                if (aV < bV) return th._sortDir === 'asc' ? -1 : 1;
-                if (aV > bV) return th._sortDir === 'asc' ? 1 : -1;
-                return 0;
-            });
-            rows.forEach(r => tbody.appendChild(r));
+            const col = th.dataset.col;
+            if (onSortCb && col) {
+                onSortCb(col, th._sortDir);
+            } else {
+                const tbody = tableEl.querySelector('tbody');
+                if (!tbody) return;
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                if (rows.length <= 1) return;
+                const parseVal = (text) => {
+                    const s = text.trim();
+                    const dm = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+                    if (dm) return new Date(+dm[3], +dm[2] - 1, +dm[1]).getTime();
+                    const n = parseFloat(s.replace(/\s/g, '').replace(',', '.'));
+                    if (!isNaN(n) && /^[\d\s,.\-]+$/.test(s)) return n;
+                    return s.toLowerCase();
+                };
+                rows.sort((a, b) => {
+                    const aV = parseVal(a.cells[colIdx]?.textContent || '');
+                    const bV = parseVal(b.cells[colIdx]?.textContent || '');
+                    if (aV < bV) return th._sortDir === 'asc' ? -1 : 1;
+                    if (aV > bV) return th._sortDir === 'asc' ? 1 : -1;
+                    return 0;
+                });
+                rows.forEach(r => tbody.appendChild(r));
+            }
         });
     });
 };
@@ -1742,7 +1747,7 @@ window.renderView = async function (viewName) {
                 pageSize: p.pageSize,
                 search: p.search,
                 searchCol: 'name',
-                order: { col: 'name', ascending: true }
+                order: p.order || { col: 'name', ascending: true }
             });
             p.total = total;
 
@@ -1821,12 +1826,12 @@ window.renderView = async function (viewName) {
                         <thead>
                             <tr>
                                 ${currentUser && currentUser.role === 'admin' ? `<th><input type="checkbox" id="select-all-meds" onchange="window.toggleAllMeds(this)"></th>` : ''}
-                                <th>${t('th_med')}</th>
-                                <th>${t('th_batch')}</th>
-                                <th>${t('th_qty')}</th>
-                                <th>${t('th_entry')}</th>
-                                <th>${t('th_expiry')}</th>
-                                <th>${currentLang === 'ar' ? 'سعر الشراء' : 'Prix d\'achat'}</th>
+                                <th data-col="name">${t('th_med')}</th>
+                                <th data-col="batch">${t('th_batch')}</th>
+                                <th data-col="qty">${t('th_qty')}</th>
+                                <th data-col="entry_date">${t('th_entry')}</th>
+                                <th data-col="expiry_date">${t('th_expiry')}</th>
+                                <th data-col="price">${currentLang === 'ar' ? 'سعر الشراء' : 'Prix d\'achat'}</th>
                                 <th>${t('th_status')}</th>
                                 ${currentUser && currentUser.role === 'admin' ? `<th>${t('th_actions')}</th>` : ''}
                             </tr>
@@ -1837,7 +1842,11 @@ window.renderView = async function (viewName) {
                 ${renderPaginationControls('central')}
             `;
             viewContainer.innerHTML = content;
-            window.attachTableSort(document.getElementById('central-table'));
+            window.attachTableSort(document.getElementById('central-table'), (col, dir) => {
+                p.order = { col, ascending: dir === 'asc' };
+                p.currentPage = 1;
+                window.renderView('central');
+            });
 
             // Re-attach Search Listener with Debounce
             const searchInput = document.getElementById('search-med');
@@ -2327,7 +2336,7 @@ window.renderView = async function (viewName) {
                 pageSize: pState.pageSize,
                 search: pState.search,
                 searchCol: 'name',
-                order: { col: 'name', ascending: true }
+                order: pState.order || { col: 'name', ascending: true }
             });
             pState.total = total;
 
@@ -2404,9 +2413,9 @@ window.renderView = async function (viewName) {
                     <table id="patients-table">
                         <thead><tr>
                             ${currentUser && currentUser.role === 'admin' ? `<th><input type="checkbox" id="select-all-patients" onchange="window.toggleAllPatients(this)"></th>` : ''}
-                            <th>${t('th_patient')}</th><th>${t('th_patient_nid')}</th><th>${t('th_patient_phone')}</th>
-                            <th>${t('th_patient_hospital')}</th>
-                            <th>Statut</th><th>${t('th_total_qty')}</th>
+                            <th data-col="name">${t('th_patient')}</th><th data-col="national_id">${t('th_patient_nid')}</th><th data-col="phone">${t('th_patient_phone')}</th>
+                            <th data-col="hospital">${t('th_patient_hospital')}</th>
+                            <th data-col="status">Statut</th><th>${t('th_total_qty')}</th>
                             <th style="width:48px;"></th>
                             ${currentUser && currentUser.role === 'admin' ? `<th>Actions</th>` : ''}
                         </tr></thead>
@@ -2416,7 +2425,11 @@ window.renderView = async function (viewName) {
                 ${renderPaginationControls('patients')}
             `;
             viewContainer.innerHTML = content;
-            window.attachTableSort(document.getElementById('patients-table'));
+            window.attachTableSort(document.getElementById('patients-table'), (col, dir) => {
+                pState.order = { col, ascending: dir === 'asc' };
+                pState.currentPage = 1;
+                window.renderView('patients');
+            });
 
             // Search Listener
             const searchInput = document.getElementById('search-patient');
@@ -2447,7 +2460,7 @@ window.renderView = async function (viewName) {
                 pageSize: p.pageSize,
                 search: p.search,
                 filters: { expiry_date: { val: now, op: 'lt' } },
-                order: { col: 'expiry_date', ascending: true }
+                order: p.order || { col: 'expiry_date', ascending: true }
             });
             p.total = total;
 
@@ -2475,7 +2488,7 @@ window.renderView = async function (viewName) {
                 <div class="table-container shadow-sm">
                     <table id="expired-table">
                         <thead><tr>
-                            <th>${t('th_med')}</th><th>${t('th_batch')}</th><th>${t('th_qty')}</th><th>${t('th_expiry')}</th><th>${t('th_status')}</th>
+                            <th data-col="name">${t('th_med')}</th><th data-col="batch">${t('th_batch')}</th><th data-col="qty">${t('th_qty')}</th><th data-col="expiry_date">${t('th_expiry')}</th><th>${t('th_status')}</th>
                         </tr></thead>
                         <tbody>
                             ${rows || `<tr><td colspan="5" style="text-align:center; padding:30px;">Aucun médicament périmé.</td></tr>`}
@@ -2485,7 +2498,11 @@ window.renderView = async function (viewName) {
                 ${renderPaginationControls('expired')}
             `;
             viewContainer.innerHTML = content;
-            window.attachTableSort(document.getElementById('expired-table'));
+            window.attachTableSort(document.getElementById('expired-table'), (col, dir) => {
+                p.order = { col, ascending: dir === 'asc' };
+                p.currentPage = 1;
+                window.renderView('expired');
+            });
 
             // Search Listener for Expired
             const expSearchInput = document.getElementById('search-expired');
@@ -2615,7 +2632,7 @@ window.renderView = async function (viewName) {
                 pageSize: p.pageSize,
                 search: p.search,
                 searchCol: 'medicine_name',
-                order: { col: 'date', ascending: false }
+                order: p.order || { col: 'date', ascending: false }
             });
             p.total = total;
 
@@ -2644,14 +2661,18 @@ window.renderView = async function (viewName) {
                 </div>
                 <div class="table-container shadow-sm">
                     <table id="records-table">
-                        <thead><tr><th>Réf.</th><th>${t('th_date')}</th><th>${t('th_action')}</th><th>${t('th_med')}</th><th>${t('th_qty')}</th><th>${t('th_pharmacy')}</th><th>${t('th_worker')}</th></tr></thead>
+                        <thead><tr><th data-col="reference">Réf.</th><th data-col="date">${t('th_date')}</th><th>${t('th_action')}</th><th data-col="medicine_name">${t('th_med')}</th><th data-col="qty">${t('th_qty')}</th><th data-col="pharmacy_id">${t('th_pharmacy')}</th><th data-col="dispensed_by">${t('th_worker')}</th></tr></thead>
                         <tbody>${rRows || `<tr><td colspan="7" style="text-align:center;">---</td></tr>`}</tbody>
                     </table>
                 </div>
                 ${renderPaginationControls('records')}
             `;
             viewContainer.innerHTML = content;
-            window.attachTableSort(document.getElementById('records-table'));
+            window.attachTableSort(document.getElementById('records-table'), (col, dir) => {
+                p.order = { col, ascending: dir === 'asc' };
+                p.currentPage = 1;
+                window.renderView('records');
+            });
 
             // Search Listener
             const searchInput = document.getElementById('search-record');
@@ -3233,7 +3254,20 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
         );
     }
 
-    // 3. Apply local pagination
+    // 3. Apply sort then local pagination
+    if (pStockState.sortCol) {
+        const asc = pStockState.sortDir !== 'desc';
+        filteredStock.sort((a, b) => {
+            let aV, bV;
+            const col = pStockState.sortCol;
+            if (col === 'name')   { aV = (a.medicines?.name || '').toLowerCase();  bV = (b.medicines?.name || '').toLowerCase(); }
+            else if (col === 'batch')  { aV = (a.medicines?.batch || '').toLowerCase(); bV = (b.medicines?.batch || '').toLowerCase(); }
+            else if (col === 'expiry') { aV = a.medicines?.expiry_date || '9999'; bV = b.medicines?.expiry_date || '9999'; }
+            else if (col === 'qty')    { aV = a.qty || 0; bV = b.qty || 0; }
+            else return 0;
+            return aV < bV ? (asc ? -1 : 1) : aV > bV ? (asc ? 1 : -1) : 0;
+        });
+    }
     pStockState.total = filteredStock.length;
     const from = (pStockState.currentPage - 1) * pStockState.pageSize;
     const to = from + pStockState.pageSize;
@@ -3267,7 +3301,7 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
             pageSize: pHistoryState.pageSize,
             search: pHistoryState.search,
             filters: { pharmacy_id: numericId },
-            order: { col: 'date', ascending: false }
+            order: pHistoryState.order || { col: 'date', ascending: false }
         });
         dispHistory  = histResult.data  || [];
         historyTotal = histResult.total || 0;
@@ -3396,10 +3430,10 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
                     <thead>
                         <tr style="background:#f8fafc;">
                             ${isFullAdmin ? `<th style="width:50px; text-align:center;"><input type="checkbox" onchange="window.toggleAllPharmacyStock(this, ${pharmId})"></th>` : ''}
-                            <th>Médicament</th>
-                            <th>Lot</th>
-                            <th>Expiration</th>
-                            <th>Quantité</th>
+                            <th data-col="name">Médicament</th>
+                            <th data-col="batch">Lot</th>
+                            <th data-col="expiry">Expiration</th>
+                            <th data-col="qty">Quantité</th>
                             <th style="text-align:right;">Actions</th>
                         </tr>
                     </thead>
@@ -3489,7 +3523,7 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
                 </div>
                 <div class="table-container shadow-sm">
                     <table id="pharm-hist-table-${pharmId}">
-                        <thead><tr><th>Réf.</th><th>Date</th><th>Patient</th><th>Médicament</th><th>Qté</th><th>Staff</th></tr></thead>
+                        <thead><tr><th data-col="reference">Réf.</th><th data-col="date">Date</th><th data-col="patient_name">Patient</th><th data-col="medicine_name">Médicament</th><th data-col="qty">Qté</th><th data-col="dispensed_by">Staff</th></tr></thead>
                         <tbody>
                             ${dispHistory.map(d => `
                                 <tr>
@@ -3520,8 +3554,17 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
     }
 
     viewContainer.innerHTML = dashboardHeaderHtml + tabsHtml + finalBody;
-    window.attachTableSort(document.getElementById(`pharm-stock-table-${pharmId}`));
-    window.attachTableSort(document.getElementById(`pharm-hist-table-${pharmId}`));
+    window.attachTableSort(document.getElementById(`pharm-stock-table-${pharmId}`), (col, dir) => {
+        pStockState.sortCol = col;
+        pStockState.sortDir = dir;
+        pStockState.currentPage = 1;
+        window.renderPharmacy(pharmId, 'all');
+    });
+    window.attachTableSort(document.getElementById(`pharm-hist-table-${pharmId}`), (col, dir) => {
+        pHistoryState.order = { col, ascending: dir === 'asc' };
+        pHistoryState.currentPage = 1;
+        window.renderPharmacy(pharmId, 'history');
+    });
 
     // --- LISTENERS ---
     const stockSearch = document.getElementById('search-pharm-stock-main');
