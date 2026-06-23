@@ -2982,7 +2982,7 @@ function generateCentralTableRows(meds) {
         }
 
         return `
-            <tr>
+            <tr style="cursor:pointer;" ondblclick="window.showMedHistory(${m.id})">
                 ${checkbox}
                 <td><strong>${m.name}</strong></td>
                 <td>${m.batch}</td>
@@ -2996,6 +2996,96 @@ function generateCentralTableRows(meds) {
         `;
     }).join('');
 }
+
+window.showMedHistory = async function(medId) {
+    const modal = document.getElementById('patient-history-modal');
+    document.getElementById('patient-history-title').querySelector('span').textContent = 'Historique du médicament';
+    document.getElementById('patient-history-body').innerHTML = `<div style="text-align:center;padding:40px;"><i class="fa-solid fa-spinner fa-spin fa-2x" style="color:var(--primary-brand);"></i></div>`;
+    modal.classList.add('active');
+
+    try {
+        const [{ data: med }, { data: transfers }] = await Promise.all([
+            _supabase.from('medicines').select('*').eq('id', medId).single(),
+            _supabase.from('transfers').select('*').eq('medicine_id', medId).order('date', { ascending: false })
+        ]);
+
+        if (!med) { document.getElementById('patient-history-body').innerHTML = `<p style="text-align:center;padding:20px;">Médicament introuvable.</p>`; return; }
+
+        document.getElementById('patient-history-title').querySelector('span').textContent = `${med.name} — Lot: ${med.batch || '-'}`;
+
+        const outRows = (transfers || []).filter(t => !t.is_return);
+        const retRows = (transfers || []).filter(t => t.is_return);
+
+        const totalOut = outRows.reduce((s, t) => s + (t.qty || 0), 0);
+        const totalRet = retRows.reduce((s, t) => s + (t.qty || 0), 0);
+        const initialQty = (med.qty || 0) + totalOut - totalRet;
+
+        const thStyle = 'padding:8px 12px; text-align:left; font-size:0.8rem; color:#64748b; font-weight:600;';
+        const tdStyle = 'padding:8px 12px; border-bottom:1px solid #f1f5f9; font-size:0.85rem;';
+
+        document.getElementById('patient-history-body').innerHTML = `
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px; padding:0 4px;">
+                <div style="background:#f0fdf4; border-radius:8px; padding:12px; text-align:center;">
+                    <div style="font-size:1.4rem; font-weight:800; color:#059669;">${initialQty}</div>
+                    <div style="font-size:0.75rem; color:#6b7280;">Entrée initiale</div>
+                </div>
+                <div style="background:#fef2f2; border-radius:8px; padding:12px; text-align:center;">
+                    <div style="font-size:1.4rem; font-weight:800; color:#dc2626;">${totalOut}</div>
+                    <div style="font-size:0.75rem; color:#6b7280;">Total distribué</div>
+                </div>
+            </div>
+
+            <div style="margin-bottom:20px;">
+                <div style="font-weight:700; color:#059669; padding:8px 12px; background:#f0fdf4; border-radius:8px; margin-bottom:6px;">
+                    <i class="fa-solid fa-arrow-trend-down"></i> Entrées
+                </div>
+                <table style="width:100%; border-collapse:collapse;">
+                    <thead><tr>
+                        <th style="${thStyle}">Date</th>
+                        <th style="${thStyle}">Quantité</th>
+                        <th style="${thStyle}">Source</th>
+                    </tr></thead>
+                    <tbody>
+                        ${med.entry_date ? `<tr>
+                            <td style="${tdStyle}">${formatDate(med.entry_date)}</td>
+                            <td style="${tdStyle}"><span class="status-badge good">+${initialQty}</span></td>
+                            <td style="${tdStyle}">Stock initial</td>
+                        </tr>` : ''}
+                        ${retRows.length ? retRows.map(t => `<tr>
+                            <td style="${tdStyle}">${formatDate(t.date)}</td>
+                            <td style="${tdStyle}"><span class="status-badge good">+${t.qty}</span></td>
+                            <td style="${tdStyle}">Retour — ${state.pharmacies[t.to_pharmacy_id]?.name?.fr || 'Pharmacie ' + t.to_pharmacy_id}</td>
+                        </tr>`).join('') : `<tr><td colspan="3" style="text-align:center;padding:12px;color:#9ca3af;font-size:0.85rem;">Aucun retour enregistré</td></tr>`}
+                    </tbody>
+                </table>
+            </div>
+
+            <div>
+                <div style="font-weight:700; color:#dc2626; padding:8px 12px; background:#fef2f2; border-radius:8px; margin-bottom:6px;">
+                    <i class="fa-solid fa-arrow-trend-up"></i> Sorties (Distributions)
+                </div>
+                <table style="width:100%; border-collapse:collapse;">
+                    <thead><tr>
+                        <th style="${thStyle}">Date</th>
+                        <th style="${thStyle}">Quantité</th>
+                        <th style="${thStyle}">Destination</th>
+                        <th style="${thStyle}">Agent</th>
+                    </tr></thead>
+                    <tbody>
+                        ${outRows.length ? outRows.map(t => `<tr>
+                            <td style="${tdStyle}">${formatDate(t.date)}</td>
+                            <td style="${tdStyle}"><span class="status-badge danger">-${t.qty}</span></td>
+                            <td style="${tdStyle}">${state.pharmacies[t.to_pharmacy_id]?.name?.fr || 'Pharmacie ' + t.to_pharmacy_id}</td>
+                            <td style="${tdStyle}">${t.dispensed_by || '-'}</td>
+                        </tr>`).join('') : `<tr><td colspan="4" style="text-align:center;padding:12px;color:#9ca3af;font-size:0.85rem;">Aucune distribution enregistrée</td></tr>`}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    } catch(err) {
+        document.getElementById('patient-history-body').innerHTML = `<div style="text-align:center;padding:30px;color:red;">Erreur: ${err.message}</div>`;
+    }
+};
 
 // Central Stock Import Handler (standalone, so it works as an event listener reference)
 window.handleCentralImport = async function (e) {
