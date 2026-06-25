@@ -3543,6 +3543,7 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
                                 <td style="text-align:right; display:flex; gap:8px; justify-content:flex-end;">
                                     <button class="icon-btn edit-btn" title="Délivrer" onclick="window.renderPharmacy(${pharmId}, 'pharm-dispense')"><i class="fa-solid fa-hand-holding-medical"></i></button>
                                     <button class="icon-btn" title="Retour au Central" onclick="window.returnToCentral(${pharmId}, ${m.id})"><i class="fa-solid fa-rotate-left"></i></button>
+                                    ${isFullAdmin ? `<button class="icon-btn" style="color:#d97706;" title="Modifier la quantité" onclick="window.editPharmacyStockQty(${pharmId}, ${m.id}, ${m.qty})"><i class="fa-solid fa-pen"></i></button>` : ''}
                                     ${isFullAdmin ? `<button class="icon-btn delete-btn" onclick="window.deleteFromPharmacyStock(${pharmId}, ${m.id})"><i class="fa-solid fa-trash"></i></button>` : ''}
                                 </td>
                             </tr>
@@ -4443,6 +4444,33 @@ window.deleteSelectedPharmacyStock = async function (pharmId) {
         console.error(err);
         window.updateSyncStatus('error');
         showToast("Erreur lors de la suppression", "error");
+    }
+};
+
+window.editPharmacyStockQty = async function (pharmId, medId, currentQty) {
+    const newVal = await window.showCustomDialog({
+        title: currentLang === 'ar' ? 'تعديل الكمية' : 'Modifier la quantité',
+        msg: currentLang === 'ar' ? 'أدخل الكمية الجديدة:' : 'Entrez la nouvelle quantité:',
+        type: 'prompt',
+        defaultValue: String(currentQty),
+        icon: 'fa-pen'
+    });
+    if (newVal === null || newVal === undefined || newVal === '') return;
+
+    const parsedQty = parseInt(newVal, 10);
+    if (isNaN(parsedQty) || parsedQty < 0) {
+        window.showToast(currentLang === 'ar' ? 'كمية غير صالحة' : 'Quantité invalide', 'error');
+        return;
+    }
+
+    try {
+        await _supabase.from('pharmacy_stock').update({ qty: parsedQty }).eq('pharmacy_id', pharmId).eq('medicine_id', medId);
+        window.showToast(currentLang === 'ar' ? 'تم تحديث الكمية' : 'Quantité mise à jour', 'success');
+        window.invalidatePharmacyStockCache(pharmId);
+        window.renderPharmacy(pharmId, 'all');
+    } catch (err) {
+        console.error(err);
+        window.showToast(currentLang === 'ar' ? 'خطأ في التحديث' : 'Erreur lors de la mise à jour', 'error');
     }
 };
 
