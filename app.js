@@ -2727,7 +2727,7 @@ window.renderView = async function (viewName) {
         // Fetch Data for the selected timeframe
         let startDate = new Date();
         if (timeframe === 'day') startDate.setDate(startDate.getDate() - 30); // Show last 30 days (grouped by day)
-        else if (timeframe === 'week') startDate.setDate(startDate.getDate() - 14); // Show last 2 weeks
+        else if (timeframe === 'week') startDate.setFullYear(startDate.getFullYear() - 1); // Show last year (pagination handles browsing)
         else if (timeframe === 'month') startDate.setMonth(startDate.getMonth() - 3); // Show last 3 months
         else if (timeframe === 'year') startDate.setFullYear(startDate.getFullYear() - 1); // Show last year
 
