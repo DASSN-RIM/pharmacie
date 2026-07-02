@@ -3386,7 +3386,7 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
 
     // Compute expired count locally — allStockData already has medicines.expiry_date
     const expiredLocalCount = allStockData.filter(
-        ps => ps.medicines && ps.medicines.expiry_date && ps.medicines.expiry_date < today
+        ps => ps.medicines && ps.medicines.expiry_date && ps.medicines.expiry_date < today && ps.qty > 0
     ).length;
     const expiredTotal = { count: expiredLocalCount };
 
