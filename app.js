@@ -3466,7 +3466,7 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
                 <div class="stat-val">${lowStockTotal.count || 0}</div>
                 <div class="stat-label">Stock Faible</div>
             </div>
-            <div class="stat-card sc-red" style="cursor:default;">
+            <div class="stat-card sc-red" onclick="window.renderPharmacy(${pharmId}, 'expired')">
                 <div class="stat-val">${expiredTotal.count || 0}</div>
                 <div class="stat-label">Périmés</div>
             </div>
@@ -3490,6 +3490,54 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
             <button class="report-tab ${subView === 'pharm-inbox' ? 'active' : ''}" onclick="window.renderPharmacy(${pharmId}, 'pharm-inbox')">
                 <i class="fa-solid fa-inbox"></i> ${currentLang === 'ar' ? 'الرسائل' : 'Réception'}
             </button>
+            <button class="report-tab ${subView === 'expired' ? 'active' : ''}" onclick="window.renderPharmacy(${pharmId}, 'expired')" style="${subView === 'expired' ? '' : 'color:#dc2626;'}">
+                <i class="fa-solid fa-triangle-exclamation"></i> ${currentLang === 'ar' ? 'منتهي الصلاحية' : 'Périmés'}
+            </button>
+        </div>
+    `;
+
+    // --- EXPIRED ITEMS FOR PHARMACY ---
+    const expiredStockItems = allStockData.filter(
+        ps => ps.medicines && ps.medicines.expiry_date && ps.medicines.expiry_date < today && ps.qty > 0
+    ).map(ps => ({
+        id: ps.medicines.id,
+        ps_id: ps.id,
+        name: ps.medicines.name,
+        batch: ps.medicines.batch,
+        expiry: ps.medicines.expiry_date,
+        qty: ps.qty
+    }));
+
+    const expiredPharmHtml = `
+        <div class="transfer-card animated fadeIn" style="border-top: 5px solid #dc2626;">
+            <div class="block-title" style="color:#dc2626; display:flex; justify-content:space-between; align-items:center; padding: 20px 25px;">
+                <div>
+                    <div style="font-size:1.2rem; font-weight:800;"><i class="fa-solid fa-triangle-exclamation"></i> Médicaments Périmés</div>
+                    <div style="font-size:0.85rem; color:#94a3b8;">${expiredStockItems.length} article(s) périmé(s) avec stock > 0</div>
+                </div>
+            </div>
+            <div class="table-container shadow-sm">
+                <table id="pharm-expired-table-${pharmId}">
+                    <thead>
+                        <tr style="background:#fff5f5;">
+                            <th>Médicament</th>
+                            <th>Lot</th>
+                            <th>Expiration</th>
+                            <th>Quantité</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${expiredStockItems.length ? expiredStockItems.map(m => `
+                            <tr>
+                                <td><strong>${m.name}</strong></td>
+                                <td><span class="badge-soft">${m.batch || '-'}</span></td>
+                                <td style="color:red; font-weight:700;">${formatDate(m.expiry)}</td>
+                                <td><span class="status-badge warning">${m.qty}</span></td>
+                            </tr>
+                        `).join('') : `<tr><td colspan="4" style="text-align:center; padding:50px; color:#94a3b8;">Aucun médicament périmé avec stock > 0.</td></tr>`}
+                    </tbody>
+                </table>
+            </div>
         </div>
     `;
 
@@ -3647,6 +3695,8 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
         finalBody = notificationsHtml || `<div style="padding:40px; text-align:center; color:#94a3b8;">Boîte de réception vide.</div>`;
     } else if (subView === 'pharm-order') {
         finalBody = orderHtml;
+    } else if (subView === 'expired') {
+        finalBody = expiredPharmHtml;
     } else {
         finalBody = modernStockHtml;
     }
