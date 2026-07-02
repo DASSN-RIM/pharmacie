@@ -3466,7 +3466,7 @@ window.renderPharmacy = async function (pharmId, subView = 'all') {
                 <div class="stat-val">${lowStockTotal.count || 0}</div>
                 <div class="stat-label">Stock Faible</div>
             </div>
-            <div class="stat-card sc-red">
+            <div class="stat-card sc-red" style="cursor:default;">
                 <div class="stat-val">${expiredTotal.count || 0}</div>
                 <div class="stat-label">Périmés</div>
             </div>
