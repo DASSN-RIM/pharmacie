@@ -502,6 +502,8 @@ async function fetchTableData(table, { page = 1, pageSize = 25, search = '', sea
         if (val !== null && val !== undefined && val !== '') {
             if (typeof val === 'object' && val.op === 'lt') {
                 query = query.lt(col, val.val);
+            } else if (typeof val === 'object' && val.op === 'gt') {
+                query = query.gt(col, val.val);
             } else {
                 query = query.eq(col, val);
             }
@@ -563,7 +565,7 @@ async function loadDataFromSupabase() {
             _supabase.from('patients').select('id', { count: 'exact', head: true }),
             _supabase.from('transfers').select('id', { count: 'exact', head: true }),
             _supabase.from('dispensations').select('id', { count: 'exact', head: true }),
-            _supabase.from('medicines').select('id', { count: 'exact', head: true }).lt('expiry_date', new Date().toISOString().split('T')[0]),
+            _supabase.from('medicines').select('id', { count: 'exact', head: true }).lt('expiry_date', new Date().toISOString().split('T')[0]).gt('qty', 0),
             _supabase.from('medicines').select('id', { count: 'exact', head: true }).lt('qty', 50)
         ]);
 
@@ -2464,7 +2466,7 @@ window.renderView = async function (viewName) {
                 page: p.currentPage,
                 pageSize: p.pageSize,
                 search: p.search,
-                filters: { expiry_date: { val: now, op: 'lt' } },
+                filters: { expiry_date: { val: now, op: 'lt' }, qty: { val: 0, op: 'gt' } },
                 order: p.order || { col: 'expiry_date', ascending: true }
             });
             p.total = total;
@@ -4733,7 +4735,7 @@ window.exportToExcel = async function (tableId, fileName) {
         window.showToast("Préparation de l'exportation des périmés...", "info");
         try {
             const today = new Date().toISOString().split('T')[0];
-            const { data, error } = await _supabase.from('medicines').select('name, batch, expiry_date, qty, price').lt('expiry_date', today).limit(50000);
+            const { data, error } = await _supabase.from('medicines').select('name, batch, expiry_date, qty, price').lt('expiry_date', today).gt('qty', 0).limit(50000);
             if (error) throw error;
 
             const exportData = data.map(d => ({
