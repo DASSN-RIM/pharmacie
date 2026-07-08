@@ -2231,23 +2231,31 @@ window.renderView = async function (viewName) {
             date: o.date ? String(o.date).split('T')[0] : ''
         })).filter(o => o.status === 'PENDING').slice().reverse();
 
-        // Fetch treated orders directly from DB (never stored in state to avoid large payloads)
+        // Fetch treated orders and delivery transfers from DB in parallel
         let treatedOrders = [];
+        let deliveryTransfers = [];
         try {
-            const { data: _treatedOrdsData } = await _supabase
-                .from('orders')
-                .select('id, date, pharmacy_id, worker_name, status, items')
-                .eq('status', 'TREATED')
-                .order('created_at', { ascending: false })
-                .limit(200);
-            treatedOrders = (_treatedOrdsData || []).map(o => ({
+            const [_treatedOrdsRes, _transRes] = await Promise.all([
+                _supabase.from('orders').select('id, date, pharmacy_id, worker_name, status, items')
+                    .eq('status', 'TREATED').order('created_at', { ascending: false }).limit(200),
+                _supabase.from('transfers').select('id, date, medicine_name, qty, to_pharmacy_id, dispensed_by')
+                    .eq('is_return', false).order('date', { ascending: false }).limit(500)
+            ]);
+            treatedOrders = (_treatedOrdsRes.data || []).map(o => ({
                 ...o,
                 pharmacyId: o.pharmacy_id,
                 workerName: o.worker_name,
                 date: o.date ? String(o.date).split('T')[0] : ''
             }));
             _treatedOrdersCache = treatedOrders;
-        } catch (_) { /* si erreur réseau, historique reste vide */ }
+            deliveryTransfers = (_transRes.data || []).map(t => ({
+                ...t,
+                pharmacyId: t.to_pharmacy_id,
+                medName: t.medicine_name,
+                dispensedBy: t.dispensed_by,
+                date: t.date ? String(t.date).split('T')[0] : ''
+            }));
+        } catch (_) { /* si erreur réseau, historiques restent vides */ }
 
         content += `
             <div class="dash-row" style="margin-bottom:20px;">
@@ -2293,6 +2301,28 @@ window.renderView = async function (viewName) {
                                     </td>
                                 </tr>
                                 `).join('') : `<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding:20px;">Aucun historique disponible.</td></tr>`}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dash-row" style="margin-top:20px;">
+                <div class="dash-col" style="flex:1; border-top: 4px solid var(--info-blue);">
+                    <div class="block-title" style="color:var(--info-blue);"><i class="fa-solid fa-truck"></i> Bons de Livraison — Transferts vers Pharmacies (${deliveryTransfers.length})</div>
+                    <div class="table-container shadow-sm">
+                        <table>
+                            <thead><tr><th>Date</th><th>Médicament</th><th>Pharmacie</th><th>Quantité</th><th>Émetteur</th></tr></thead>
+                            <tbody>
+                                ${deliveryTransfers.length > 0 ? deliveryTransfers.map(t => `
+                                <tr>
+                                    <td>${formatDate(t.date)}</td>
+                                    <td><strong>${t.medName || '---'}</strong></td>
+                                    <td>${state.pharmacies[t.pharmacyId]?.name?.fr || 'Pharmacie #' + t.pharmacyId}</td>
+                                    <td><span class="status-badge good">+${t.qty}</span></td>
+                                    <td>${t.dispensedBy || '---'}</td>
+                                </tr>
+                                `).join('') : `<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding:20px;">Aucun transfert trouvé.</td></tr>`}
                             </tbody>
                         </table>
                     </div>
