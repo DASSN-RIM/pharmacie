@@ -2187,22 +2187,24 @@ window.renderView = async function (viewName) {
                 await _supabase.from('transfers').insert(transferInserts);
                 const barcode = await window.getNextCounterValue('delivery');
 
+                const workerNameStr = currentUser ? (typeof currentUser.name === 'object' ? currentUser.name.fr : currentUser.name) : 'Système';
                 const newReceipt = {
-                    id: barcode, date: new Date().toISOString(), type: 'DISTRIBUTION',
-                    pharmacy_id: pharmId, items: batch,
-                    worker_name: currentUser ? (typeof currentUser.name === 'object' ? currentUser.name.fr : currentUser.name) : 'Système',
-                    target_name: state.pharmacies[pharmId].name.fr,
+                    reference: barcode,
+                    type: 'DISTRIBUTION',
+                    pharmacy_id: pharmId,
+                    items: batch,
+                    worker_name: workerNameStr,
                     signed_photo: null
                 };
 
-                // Try to save to Supabase
+                // Save to Supabase (schema: id BIGSERIAL, reference TEXT, type, pharmacy_id, worker_name, items, created_at)
                 const { error: recError } = await _supabase.from('receipts').insert([newReceipt]);
                 if (recError) {
-                    console.warn("Could not save receipt to Supabase natively (missing table?). Using Fallback.", recError);
-                    if (!state.receipts) state.receipts = [];
-                    state.receipts.push(newReceipt);
-                    localStorage.setItem('local_receipts', JSON.stringify(state.receipts));
+                    console.warn("Could not save receipt to Supabase:", recError);
                 }
+                // Always keep in state.receipts (with barcode as id for downloadSavedReceipt)
+                if (!state.receipts) state.receipts = [];
+                state.receipts.push({ ...newReceipt, id: barcode, targetName: state.pharmacies[pharmId].name.fr, workerName: workerNameStr, date: new Date().toISOString() });
 
                 // Targeted state update: only update stats counter, no full reload needed
                 if (state.stats) state.stats.totalDistributions = (state.stats.totalDistributions || 0) + batch.length;
@@ -2231,15 +2233,15 @@ window.renderView = async function (viewName) {
             date: o.date ? String(o.date).split('T')[0] : ''
         })).filter(o => o.status === 'PENDING').slice().reverse();
 
-        // Fetch treated orders and delivery transfers from DB in parallel
+        // Fetch treated orders and delivery receipts from DB in parallel
         let treatedOrders = [];
-        let deliveryTransfers = [];
+        let deliveryBons = [];
         try {
-            const [_treatedOrdsRes, _transRes] = await Promise.all([
+            const [_treatedOrdsRes, _bonsRes] = await Promise.all([
                 _supabase.from('orders').select('id, date, pharmacy_id, worker_name, status, items')
                     .eq('status', 'TREATED').order('created_at', { ascending: false }).limit(200),
-                _supabase.from('transfers').select('id, date, medicine_name, qty, to_pharmacy_id, dispensed_by')
-                    .eq('is_return', false).order('date', { ascending: false }).limit(500)
+                _supabase.from('receipts').select('id, reference, pharmacy_id, worker_name, created_at, items')
+                    .eq('type', 'DISTRIBUTION').order('created_at', { ascending: false }).limit(200)
             ]);
             treatedOrders = (_treatedOrdsRes.data || []).map(o => ({
                 ...o,
@@ -2248,13 +2250,24 @@ window.renderView = async function (viewName) {
                 date: o.date ? String(o.date).split('T')[0] : ''
             }));
             _treatedOrdersCache = treatedOrders;
-            deliveryTransfers = (_transRes.data || []).map(t => ({
-                ...t,
-                pharmacyId: t.to_pharmacy_id,
-                medName: t.medicine_name,
-                dispensedBy: t.dispensed_by,
-                date: t.date ? String(t.date).split('T')[0] : ''
+            deliveryBons = (_bonsRes.data || []).map(r => ({
+                ...r,
+                ref: r.reference,
+                pharmacyId: r.pharmacy_id,
+                workerName: r.worker_name,
+                date: r.created_at ? String(r.created_at).split('T')[0] : ''
             }));
+            // Merge into state.receipts so downloadSavedReceipt can find them by reference
+            const existingRefs = new Set((state.receipts || []).map(r => r.id));
+            deliveryBons.forEach(r => {
+                if (r.ref && !existingRefs.has(r.ref)) {
+                    state.receipts.push({
+                        id: r.ref, type: 'DISTRIBUTION', items: r.items || [],
+                        targetName: state.pharmacies[r.pharmacyId]?.name?.fr || '',
+                        workerName: r.workerName, date: r.created_at
+                    });
+                }
+            });
         } catch (_) { /* si erreur réseau, historiques restent vides */ }
 
         content += `
@@ -2309,20 +2322,22 @@ window.renderView = async function (viewName) {
 
             <div class="dash-row" style="margin-top:20px;">
                 <div class="dash-col" style="flex:1; border-top: 4px solid var(--info-blue);">
-                    <div class="block-title" style="color:var(--info-blue);"><i class="fa-solid fa-truck"></i> Bons de Livraison — Transferts vers Pharmacies (${deliveryTransfers.length})</div>
+                    <div class="block-title" style="color:var(--info-blue);"><i class="fa-solid fa-truck"></i> Historique des Bons de Distribution (${deliveryBons.length})</div>
                     <div class="table-container shadow-sm">
                         <table>
-                            <thead><tr><th>Date</th><th>Médicament</th><th>Pharmacie</th><th>Quantité</th><th>Émetteur</th></tr></thead>
+                            <thead><tr><th>Date</th><th>Référence</th><th>Pharmacie</th><th>Émetteur</th><th>Action</th></tr></thead>
                             <tbody>
-                                ${deliveryTransfers.length > 0 ? deliveryTransfers.map(t => `
+                                ${deliveryBons.length > 0 ? deliveryBons.map(r => `
                                 <tr>
-                                    <td>${formatDate(t.date)}</td>
-                                    <td><strong>${t.medName || '---'}</strong></td>
-                                    <td>${state.pharmacies[t.pharmacyId]?.name?.fr || 'Pharmacie #' + t.pharmacyId}</td>
-                                    <td><span class="status-badge good">+${t.qty}</span></td>
-                                    <td>${t.dispensedBy || '---'}</td>
+                                    <td>${formatDate(r.date)}</td>
+                                    <td><strong>${r.ref || '---'}</strong></td>
+                                    <td>${state.pharmacies[r.pharmacyId]?.name?.fr || 'Pharmacie #' + r.pharmacyId}</td>
+                                    <td>${r.workerName || '---'}</td>
+                                    <td>
+                                        <button class="icon-btn" style="color:var(--info-blue);" onclick="window.downloadSavedReceipt('${r.ref}')" title="Télécharger PDF"><i class="fa-solid fa-file-pdf"></i></button>
+                                    </td>
                                 </tr>
-                                `).join('') : `<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding:20px;">Aucun transfert trouvé.</td></tr>`}
+                                `).join('') : `<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding:20px;">Aucun bon de distribution trouvé.</td></tr>`}
                             </tbody>
                         </table>
                     </div>
