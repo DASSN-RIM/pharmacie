@@ -2241,7 +2241,7 @@ window.renderView = async function (viewName) {
                 _supabase.from('orders').select('id, date, pharmacy_id, worker_name, status, items')
                     .eq('status', 'TREATED').order('created_at', { ascending: false }).limit(200),
                 _supabase.from('receipts').select('id, reference, pharmacy_id, worker_name, created_at, items')
-                    .eq('type', 'DISTRIBUTION').order('created_at', { ascending: false }).limit(200)
+                    .eq('type', 'DISTRIBUTION').order('created_at', { ascending: false }).limit(50000)
             ]);
             treatedOrders = (_treatedOrdsRes.data || []).map(o => ({
                 ...o,
