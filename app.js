@@ -466,7 +466,8 @@ let pagination = {
     dispensations: { currentPage: 1, pageSize: 25, total: 0, search: '' },
     pharmacy_stock: { currentPage: 1, pageSize: 25, total: 0, search: '' },
     analytical_global: { currentPage: 1, pageSize: 25, total: 0 },
-    analytical_pharm: { currentPage: 1, pageSize: 25, total: 0 }
+    analytical_pharm: { currentPage: 1, pageSize: 25, total: 0 },
+    admin_delivery_bons: { currentPage: 1, pageSize: 10, total: 0 }
 };
 
 // Global tracking for active pharmacy view (used by changePage for pharmacy pagination)
@@ -1518,6 +1519,8 @@ window.changePage = function (view, page) {
         window.renderPharmacy(window.activePharmacyId, window.activeSubView || 'all');
     } else if (view === 'analytical_global' || view === 'analytical_pharm') {
         window.renderView('analytical_reports');
+    } else if (view === 'admin_delivery_bons') {
+        window.renderView('admin_orders');
     } else {
         window.renderView(view);
     }
@@ -2327,20 +2330,27 @@ window.renderView = async function (viewName) {
                         <table>
                             <thead><tr><th>Date</th><th>Référence</th><th>Pharmacie</th><th>Émetteur</th><th>Action</th></tr></thead>
                             <tbody>
-                                ${deliveryBons.length > 0 ? deliveryBons.map(r => `
-                                <tr>
-                                    <td>${formatDate(r.date)}</td>
-                                    <td><strong>${r.ref || '---'}</strong></td>
-                                    <td>${state.pharmacies[r.pharmacyId]?.name?.fr || 'Pharmacie #' + r.pharmacyId}</td>
-                                    <td>${r.workerName || '---'}</td>
-                                    <td>
-                                        <button class="icon-btn" style="color:var(--info-blue);" onclick="window.downloadSavedReceipt('${r.ref}')" title="Télécharger PDF"><i class="fa-solid fa-file-pdf"></i></button>
-                                    </td>
-                                </tr>
-                                `).join('') : `<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding:20px;">Aucun bon de distribution trouvé.</td></tr>`}
+                                ${(() => {
+                                    const pBons = pagination['admin_delivery_bons'];
+                                    pBons.total = deliveryBons.length;
+                                    const from = (pBons.currentPage - 1) * pBons.pageSize;
+                                    const pageBons = deliveryBons.slice(from, from + pBons.pageSize);
+                                    return pageBons.length > 0 ? pageBons.map(r => `
+                                    <tr>
+                                        <td>${formatDate(r.date)}</td>
+                                        <td><strong>${r.ref || '---'}</strong></td>
+                                        <td>${state.pharmacies[r.pharmacyId]?.name?.fr || 'Pharmacie #' + r.pharmacyId}</td>
+                                        <td>${r.workerName || '---'}</td>
+                                        <td>
+                                            <button class="icon-btn" style="color:var(--info-blue);" onclick="window.downloadSavedReceipt('${r.ref}')" title="Télécharger PDF"><i class="fa-solid fa-file-pdf"></i></button>
+                                        </td>
+                                    </tr>
+                                    `).join('') : `<tr><td colspan="5" style="text-align:center; color:#94a3b8; padding:20px;">Aucun bon de distribution trouvé.</td></tr>`;
+                                })()}
                             </tbody>
                         </table>
                     </div>
+                    ${renderPaginationControls('admin_delivery_bons', deliveryBons.length)}
                 </div>
             </div>
         `;
