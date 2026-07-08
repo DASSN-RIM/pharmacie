@@ -2220,11 +2220,32 @@ window.renderView = async function (viewName) {
     else if (viewName === 'admin_orders' && currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager')) {
         pageTitle.innerText = "Gestion des Commandes";
 
-        // Auto-sync orders from Supabase every time this view is opened
+        // Auto-sync pending orders from Supabase
         loadDataFromSupabase();
 
-        const pendingOrders = (state.orders || []).filter(o => o.status === 'PENDING').slice().reverse();
-        const treatedOrders = (state.orders || []).filter(o => o.status === 'TREATED').slice().reverse();
+        const pendingOrders = (state.orders || []).map(o => ({
+            ...o,
+            pharmacyId: o.pharmacyId || o.pharmacy_id,
+            workerName: o.workerName || o.worker_name,
+            date: o.date ? String(o.date).split('T')[0] : ''
+        })).filter(o => o.status === 'PENDING').slice().reverse();
+
+        // Fetch treated orders directly from DB (never stored in state to avoid large payloads)
+        let treatedOrders = [];
+        try {
+            const { data: _treatedOrdsData } = await _supabase
+                .from('orders')
+                .select('id, date, pharmacy_id, worker_name, status')
+                .eq('status', 'TREATED')
+                .order('created_at', { ascending: false })
+                .limit(200);
+            treatedOrders = (_treatedOrdsData || []).map(o => ({
+                ...o,
+                pharmacyId: o.pharmacy_id,
+                workerName: o.worker_name,
+                date: o.date ? String(o.date).split('T')[0] : ''
+            }));
+        } catch (_) { /* si erreur réseau, historique reste vide */ }
 
         content += `
             <div class="dash-row" style="margin-bottom:20px;">
