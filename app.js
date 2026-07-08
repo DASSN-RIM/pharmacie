@@ -456,6 +456,7 @@ const defaultState = {
 
 let state = defaultState;
 let activeView = 'dashboard';
+let _treatedOrdersCache = [];
 let pagination = {
     central: { currentPage: 1, pageSize: 25, total: 0, search: '' },
     patients: { currentPage: 1, pageSize: 25, total: 0, search: '' },
@@ -2235,7 +2236,7 @@ window.renderView = async function (viewName) {
         try {
             const { data: _treatedOrdsData } = await _supabase
                 .from('orders')
-                .select('id, date, pharmacy_id, worker_name, status')
+                .select('id, date, pharmacy_id, worker_name, status, items')
                 .eq('status', 'TREATED')
                 .order('created_at', { ascending: false })
                 .limit(200);
@@ -2245,6 +2246,7 @@ window.renderView = async function (viewName) {
                 workerName: o.worker_name,
                 date: o.date ? String(o.date).split('T')[0] : ''
             }));
+            _treatedOrdersCache = treatedOrders;
         } catch (_) { /* si erreur réseau, historique reste vide */ }
 
         content += `
@@ -4640,13 +4642,16 @@ window.downloadSavedReceipt = async function (receiptId) {
         return;
     }
 
-    // Fallback: try state.orders (for order PDFs from admin panel)
-    const order = state.orders.find(o => o.id === receiptId || String(o.id) === String(receiptId));
+    // Fallback: try state.orders (pending orders)
+    const allKnownOrders = [...(state.orders || []), ...(_treatedOrdersCache || [])];
+    const order = allKnownOrders.find(o => o.id === receiptId || String(o.id) === String(receiptId));
     if (order) {
-        const pharmName = (state.pharmacies[order.pharmacyId]?.name?.fr)
-            || (state.pharmacies[order.pharmacyId]?.name?.ar)
-            || `Pharmacie #${order.pharmacyId}`;
-        await window.autoDownloadReceipt('COMMANDE', pharmName, order.items || [], order.id, order.date, order.workerName || '---');
+        const pharmId = order.pharmacyId || order.pharmacy_id;
+        const pharmName = (state.pharmacies[pharmId]?.name?.fr)
+            || (state.pharmacies[pharmId]?.name?.ar)
+            || `Pharmacie #${pharmId}`;
+        const workerName = order.workerName || order.worker_name || '---';
+        await window.autoDownloadReceipt('COMMANDE', pharmName, order.items || [], order.id, order.date, workerName);
         return;
     }
 
