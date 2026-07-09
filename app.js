@@ -2676,6 +2676,7 @@ window.renderView = async function (viewName) {
             });
             p.total = total;
 
+            const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager');
             const rows = meds.map(m => `
                 <tr style="background:#fef2f2;">
                     <td><strong>${m.name}</strong></td>
@@ -2683,6 +2684,7 @@ window.renderView = async function (viewName) {
                     <td><span class="status-badge danger">${m.qty}</span></td>
                     <td style="color:var(--danger-red); font-weight:bold;">${formatDate(m.expiry_date)}</td>
                     <td><span class="status-badge danger">${t('expired_tag')}</span></td>
+                    ${isAdmin ? `<td><button class="icon-btn edit-btn" title="Corriger la date" onclick="window.editMedicine(${m.id})"><i class="fa-solid fa-pen"></i></button></td>` : ''}
                 </tr>
             `).join('');
 
@@ -2701,9 +2703,10 @@ window.renderView = async function (viewName) {
                     <table id="expired-table">
                         <thead><tr>
                             <th data-col="name">${t('th_med')}</th><th data-col="batch">${t('th_batch')}</th><th data-col="qty">${t('th_qty')}</th><th data-col="expiry_date">${t('th_expiry')}</th><th>${t('th_status')}</th>
+                            ${currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager') ? '<th></th>' : ''}
                         </tr></thead>
                         <tbody>
-                            ${rows || `<tr><td colspan="5" style="text-align:center; padding:30px;">Aucun médicament périmé.</td></tr>`}
+                            ${rows || `<tr><td colspan="6" style="text-align:center; padding:30px;">Aucun médicament périmé.</td></tr>`}
                         </tbody>
                     </table>
                 </div>
