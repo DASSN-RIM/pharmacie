@@ -467,7 +467,8 @@ let pagination = {
     pharmacy_stock: { currentPage: 1, pageSize: 25, total: 0, search: '' },
     analytical_global: { currentPage: 1, pageSize: 25, total: 0 },
     analytical_pharm: { currentPage: 1, pageSize: 25, total: 0 },
-    admin_delivery_bons: { currentPage: 1, pageSize: 10, total: 0 }
+    admin_delivery_bons: { currentPage: 1, pageSize: 10, total: 0 },
+    patients_inactive: { currentPage: 1, pageSize: 25, total: 0 }
 };
 
 // Global tracking for active pharmacy view (used by changePage for pharmacy pagination)
@@ -1521,6 +1522,8 @@ window.changePage = function (view, page) {
         window.renderView('analytical_reports');
     } else if (view === 'admin_delivery_bons') {
         window.renderView('admin_orders');
+    } else if (view === 'patients_inactive') {
+        window.renderView('patients_inactive');
     } else {
         window.renderView(view);
     }
@@ -2475,7 +2478,10 @@ window.renderView = async function (viewName) {
 
             content += `
                 <div class="page-header" style="justify-content: space-between;">
-                    <div style="display:flex; gap: 10px;">
+                    <div style="display:flex; gap: 10px; flex-wrap:wrap;">
+                        <button class="primary-btn" style="background:#7c3aed;" onclick="window.renderView('patients_inactive')">
+                            <i class="fa-solid fa-user-clock"></i> ${currentLang === 'ar' ? 'غائبون أكثر من شهر' : 'Inactifs > 1 mois'}
+                        </button>
                         ${currentUser && currentUser.role === 'admin' ? `
                         <button class="primary-btn" onclick="window.openPatientModal()">
                             <i class="fa-solid fa-plus"></i> ${currentLang === 'ar' ? 'إضافة مريض' : 'Ajouter Patient'}
@@ -2532,6 +2538,127 @@ window.renderView = async function (viewName) {
             console.error(err);
             viewContainer.innerHTML = `<div class="error-state">${err.message}</div>`;
         }
+        return;
+    }
+    else if (viewName === 'patients_inactive') {
+        pageTitle.innerText = currentLang === 'ar' ? 'المرضى الغائبون أكثر من شهر' : 'Patients inactifs > 1 mois';
+        const pState = pagination.patients_inactive;
+        try {
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - 30);
+            const cutoffStr = cutoff.toISOString().split('T')[0];
+
+            // 1. Fetch patients who had a dispensation in the last 30 days (active patients)
+            const { data: recentDisps } = await _supabase
+                .from('dispensations')
+                .select('patient_name')
+                .gte('date', cutoffStr);
+            const activeNames = new Set((recentDisps || []).map(d => d.patient_name));
+
+            // 2. Fetch ALL patients
+            const { data: allPats } = await _supabase
+                .from('patients')
+                .select('id, name, national_id, phone, hospital, status')
+                .order('name', { ascending: true });
+
+            // 3. Filter inactive (not in active set)
+            const inactivePats = (allPats || []).filter(p => !activeNames.has(p.name));
+
+            // 4. For each inactive patient, get their last dispensation date
+            let lastDispMap = {};
+            if (inactivePats.length > 0) {
+                const inactiveNames = inactivePats.map(p => p.name);
+                const { data: lastDisps } = await _supabase
+                    .from('dispensations')
+                    .select('patient_name, date')
+                    .in('patient_name', inactiveNames)
+                    .order('date', { ascending: false });
+                (lastDisps || []).forEach(d => {
+                    if (!lastDispMap[d.patient_name]) lastDispMap[d.patient_name] = d.date.split('T')[0];
+                });
+            }
+
+            pState.total = inactivePats.length;
+            const from = (pState.currentPage - 1) * pState.pageSize;
+            const pagePats = inactivePats.slice(from, from + pState.pageSize);
+
+            content += `
+                <div class="page-header" style="justify-content: space-between; margin-bottom:16px;">
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <button class="primary-btn" style="background:#64748b;" onclick="window.renderView('patients')">
+                            <i class="fa-solid fa-arrow-left"></i> ${currentLang === 'ar' ? 'العودة' : 'Retour'}
+                        </button>
+                        <span style="color:#7c3aed; font-weight:700; font-size:1rem;">
+                            <i class="fa-solid fa-user-clock"></i>
+                            ${inactivePats.length} ${currentLang === 'ar' ? 'مريض غائب أكثر من 30 يوماً' : 'patients sans délivrance depuis plus de 30 jours'}
+                        </span>
+                    </div>
+                    <button class="primary-btn" style="background:#059669;" onclick="window.exportInactivePatientsExcel()">
+                        <i class="fa-solid fa-file-excel"></i> Excel
+                    </button>
+                </div>
+                <div class="transfer-card animated fadeIn" style="border-top:4px solid #7c3aed;">
+                    <div class="table-container shadow-sm">
+                        <table id="inactive-patients-table">
+                            <thead>
+                                <tr style="background:#f5f3ff;">
+                                    <th>${currentLang === 'ar' ? 'المريض' : 'Patient'}</th>
+                                    <th>${currentLang === 'ar' ? 'الرقم الوطني' : 'N° National'}</th>
+                                    <th>${currentLang === 'ar' ? 'الهاتف' : 'Téléphone'}</th>
+                                    <th>${currentLang === 'ar' ? 'المستشفى' : 'Hôpital'}</th>
+                                    <th>${currentLang === 'ar' ? 'آخر استفادة' : 'Dernière délivrance'}</th>
+                                    <th>${currentLang === 'ar' ? 'الأيام المنقضية' : 'Jours écoulés'}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${pagePats.length > 0 ? pagePats.map(p => {
+                                    const lastDate = lastDispMap[p.name];
+                                    const daysAgo = lastDate
+                                        ? Math.floor((Date.now() - new Date(lastDate)) / 86400000)
+                                        : null;
+                                    return `<tr>
+                                        <td><strong>${p.name}</strong></td>
+                                        <td>${p.national_id || '-'}</td>
+                                        <td dir="ltr">${p.phone || '-'}</td>
+                                        <td>${p.hospital || '-'}</td>
+                                        <td style="color:#dc2626; font-weight:600;">${lastDate ? formatDate(lastDate) : (currentLang === 'ar' ? 'لا توجد سابقة' : 'Jamais')}</td>
+                                        <td><span class="status-badge" style="background:#fee2e2;color:#dc2626;">${daysAgo !== null ? daysAgo + ' j' : '—'}</span></td>
+                                    </tr>`;
+                                }).join('') : `<tr><td colspan="6" style="text-align:center;padding:40px;color:#94a3b8;">${currentLang === 'ar' ? 'لا يوجد مرضى غائبون' : 'Aucun patient inactif trouvé.'}</td></tr>`}
+                            </tbody>
+                        </table>
+                    </div>
+                    ${renderPaginationControls('patients_inactive', inactivePats.length)}
+                </div>
+            `;
+            viewContainer.innerHTML = content;
+        } catch (err) {
+            console.error(err);
+            viewContainer.innerHTML = `<div class="error-state">${err.message}</div>`;
+        }
+
+        // Export Excel for inactive patients
+        window.exportInactivePatientsExcel = async function() {
+            const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+            const cutoffStr = cutoff.toISOString().split('T')[0];
+            const { data: recentDisps } = await _supabase.from('dispensations').select('patient_name').gte('date', cutoffStr);
+            const activeNames = new Set((recentDisps || []).map(d => d.patient_name));
+            const { data: allPats } = await _supabase.from('patients').select('id, name, national_id, phone, hospital').order('name', { ascending: true });
+            const inactivePats = (allPats || []).filter(p => !activeNames.has(p.name));
+            const { data: lastDisps } = await _supabase.from('dispensations').select('patient_name, date').in('patient_name', inactivePats.map(p => p.name)).order('date', { ascending: false });
+            const lastDispMap = {};
+            (lastDisps || []).forEach(d => { if (!lastDispMap[d.patient_name]) lastDispMap[d.patient_name] = d.date.split('T')[0]; });
+            const rows = inactivePats.map(p => {
+                const lastDate = lastDispMap[p.name];
+                const daysAgo = lastDate ? Math.floor((Date.now() - new Date(lastDate)) / 86400000) : null;
+                return { Nom: p.name, 'N° National': p.national_id || '', Téléphone: p.phone || '', Hôpital: p.hospital || '', 'Dernière délivrance': lastDate || 'Jamais', 'Jours écoulés': daysAgo ?? '' };
+            });
+            if (typeof XLSX === 'undefined') { window.showToast('Module Excel non chargé', 'error'); return; }
+            const ws = XLSX.utils.json_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Inactifs');
+            XLSX.writeFile(wb, `Patients_Inactifs_${new Date().toISOString().split('T')[0]}.xlsx`);
+        };
         return;
     }
     else if (viewName === 'expired') {
