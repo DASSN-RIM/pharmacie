@@ -2195,22 +2195,21 @@ window.renderView = async function (viewName) {
 
                 const workerNameStr = currentUser ? (typeof currentUser.name === 'object' ? currentUser.name.fr : currentUser.name) : 'Système';
                 const newReceipt = {
-                    reference: barcode,
+                    id: barcode,
+                    date: new Date().toISOString(),
                     type: 'DISTRIBUTION',
                     pharmacy_id: pharmId,
                     items: batch,
                     worker_name: workerNameStr,
+                    target_name: state.pharmacies[pharmId].name.fr,
                     signed_photo: null
                 };
 
-                // Save to Supabase (schema: id BIGSERIAL, reference TEXT, type, pharmacy_id, worker_name, items, created_at)
                 const { error: recError } = await _supabase.from('receipts').insert([newReceipt]);
-                if (recError) {
-                    console.warn("Could not save receipt to Supabase:", recError);
-                }
-                // Always keep in state.receipts (with barcode as id for downloadSavedReceipt)
+                if (recError) console.warn("Could not save receipt:", recError);
+
                 if (!state.receipts) state.receipts = [];
-                state.receipts.push({ ...newReceipt, id: barcode, targetName: state.pharmacies[pharmId].name.fr, workerName: workerNameStr, date: new Date().toISOString() });
+                state.receipts.push({ ...newReceipt, targetName: newReceipt.target_name, workerName: workerNameStr });
 
                 // Targeted state update: only update stats counter, no full reload needed
                 if (state.stats) state.stats.totalDistributions = (state.stats.totalDistributions || 0) + batch.length;
@@ -2246,8 +2245,8 @@ window.renderView = async function (viewName) {
             const [_treatedOrdsRes, _bonsRes] = await Promise.all([
                 _supabase.from('orders').select('id, date, pharmacy_id, worker_name, status, items')
                     .eq('status', 'TREATED').order('created_at', { ascending: false }).limit(200),
-                _supabase.from('receipts').select('id, reference, pharmacy_id, worker_name, created_at, items')
-                    .eq('type', 'DISTRIBUTION').order('created_at', { ascending: false }).limit(50000)
+                _supabase.from('receipts').select('id, date, pharmacy_id, worker_name, target_name, items')
+                    .eq('type', 'DISTRIBUTION').order('date', { ascending: false }).limit(50000)
             ]);
             treatedOrders = (_treatedOrdsRes.data || []).map(o => ({
                 ...o,
@@ -2258,19 +2257,20 @@ window.renderView = async function (viewName) {
             _treatedOrdersCache = treatedOrders;
             deliveryBons = (_bonsRes.data || []).map(r => ({
                 ...r,
-                ref: r.reference,
+                ref: r.id,
                 pharmacyId: r.pharmacy_id,
                 workerName: r.worker_name,
-                date: r.created_at ? String(r.created_at).split('T')[0] : ''
+                targetName: r.target_name,
+                date: r.date ? String(r.date).split('T')[0] : ''
             }));
-            // Merge into state.receipts so downloadSavedReceipt can find them by reference
+            // Merge into state.receipts so downloadSavedReceipt can find them
             const existingRefs = new Set((state.receipts || []).map(r => r.id));
             deliveryBons.forEach(r => {
                 if (r.ref && !existingRefs.has(r.ref)) {
                     state.receipts.push({
                         id: r.ref, type: 'DISTRIBUTION', items: r.items || [],
-                        targetName: state.pharmacies[r.pharmacyId]?.name?.fr || '',
-                        workerName: r.workerName, date: r.created_at
+                        targetName: r.targetName || '',
+                        workerName: r.workerName, date: r.date
                     });
                 }
             });
