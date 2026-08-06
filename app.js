@@ -1822,6 +1822,9 @@ window.renderView = async function (viewName) {
                         <button class="primary-btn" style="background:#b91c1c;" onclick="window.deleteAllMeds()">
                             <i class="fa-solid fa-circle-exclamation"></i> ${currentLang === 'ar' ? 'حذف الكل (تصفير)' : 'Tout Supprimer'}
                         </button>
+                        <button class="primary-btn" style="background:#7c3aed;" onclick="window.consolidateStock()" title="دمج الأدوية المكررة تلقائياً">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> ${currentLang === 'ar' ? 'دمج المكررات' : 'Consolider Doublons'}
+                        </button>
                         ` : `
                         <button class="primary-btn" style="background:#0284c7;" onclick="window.exportCentralStockToExcel()">
                             <i class="fa-solid fa-file-export"></i> ${currentLang === 'ar' ? 'سحب Excel' : 'Exporter Excel'}
