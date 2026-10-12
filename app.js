@@ -2113,7 +2113,10 @@ window.renderView = async function (viewName) {
                 const totalAvailable = eligibleBatches.reduce((acc, curr) => acc + curr.qty, 0);
 
                 if (eligibleBatches.length === 0 || totalAvailable < qtyRequested) {
-                    const _dbg = `[cache:${_distActiveMeds.length} / trouvés:${dbStock.length} / éligibles:${eligibleBatches.length}]`;
+                    const _nm = localStock.filter(m => m.name === medName).length;
+                    const _qi = localStock.filter(m => m.name === medName && m.qty > 0).length;
+                    const _ex = localStock.filter(m => m.name === medName && m.qty > 0 && isExpired(m.expiry)).length;
+                    const _dbg = `[trouvés:${dbStock.length} / nomOK:${_nm} / qtyOK:${_qi} / périmésFiltrés:${_ex}]`;
                     await window.showCustomDialog({ title: "Erreur", msg: `Erreur: Stock insuffisant pour ${medName}. Disponible: ${totalAvailable} ${_dbg}`, icon: "fa-triangle-exclamation" });
                     valid = false;
                     break;
