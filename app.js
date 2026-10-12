@@ -2187,11 +2187,14 @@ window.renderView = async function (viewName) {
                 const pStockMap = {};
                 if (pStockData) pStockData.forEach(ps => pStockMap[ps.medicine_id] = ps.qty);
 
-                // Optimized Parallel Execution — Map for O(1) lookup instead of O(n) find()
-                const dbStockMap = new Map(dbStock.map(m => [m.id, m]));
+                // Re-fetch actual qty from medicines table before deducting (avoids RPC mismatch)
+                const { data: freshMeds } = await _supabase.from('medicines')
+                    .select('id, qty')
+                    .in('id', medIds);
+                const freshMedMap = new Map((freshMeds || []).map(m => [m.id, m.qty]));
                 const medicineUpdates = batch.map(item => {
-                    const med = dbStockMap.get(item.medId);
-                    return _supabase.from('medicines').update({ qty: med.qty - item.qty }).eq('id', item.medId);
+                    const currentQty = freshMedMap.get(item.medId) ?? 0;
+                    return _supabase.from('medicines').update({ qty: currentQty - item.qty }).eq('id', item.medId);
                 });
 
                 const pharmacyStockUpserts = batch.map(item => {
