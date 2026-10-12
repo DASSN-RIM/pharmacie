@@ -1,4 +1,4 @@
-console.log("APP.JS PARSED - VERSION 42 - SYSTEM READY");
+console.log("APP.JS PARSED - VERSION 43 - SYSTEM READY");
 
 // Translations
 const i18n = {
@@ -1401,15 +1401,29 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isEditId) {
                 const { error } = await _supabase.from('medicines').update(medData).eq('id', isEditId);
                 if (error) throw error;
+                showToast("Médicament modifié avec succès");
             } else {
-                // Let Postgres generate the ID using SERIAL/IDENTITY
-
-                const { error } = await _supabase.from('medicines').insert([medData]);
-                if (error) throw error;
+                // Check for existing medicine with same name+batch (case-insensitive)
+                const { data: existingArr } = await _supabase.from('medicines')
+                    .select('id, qty')
+                    .ilike('name', name)
+                    .ilike('batch', batch)
+                    .limit(1);
+                const existing = existingArr && existingArr[0];
+                if (existing) {
+                    const { error } = await _supabase.from('medicines')
+                        .update({ qty: existing.qty + qty })
+                        .eq('id', existing.id);
+                    if (error) throw error;
+                    showToast(`Quantité ajoutée au médicament existant (+${qty})`);
+                } else {
+                    const { error } = await _supabase.from('medicines').insert([medData]);
+                    if (error) throw error;
+                    showToast("Médicament enregistré avec succès");
+                }
             }
 
-            window.optimisticUpdate('central_stock_change'); // Reload global state
-            showToast("Médicament enregistré avec succès");
+            window.optimisticUpdate('central_stock_change');
 
             addMedModal.classList.remove('active');
             addMedForm.reset();
@@ -1417,6 +1431,22 @@ document.addEventListener('DOMContentLoaded', () => {
             window.renderView('central');
         } catch (err) {
             console.error("Error saving medicine:", err);
+        }
+    });
+
+    // Autocomplete: pre-fill expiry/price when a known medicine name is selected
+    document.getElementById('med-name').addEventListener('change', async function () {
+        const selectedName = this.value.trim();
+        if (!selectedName) return;
+        const { data: existing } = await _supabase.from('medicines')
+            .select('expiry_date, price')
+            .eq('name', selectedName)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (existing) {
+            if (existing.expiry_date) document.getElementById('med-expiry').value = existing.expiry_date.split('T')[0];
+            if (existing.price) document.getElementById('med-price').value = existing.price;
         }
     });
 
@@ -1804,7 +1834,7 @@ window.renderView = async function (viewName) {
                 <div class="page-header" style="justify-content: space-between;">
                     <div style="display:flex; gap:10px;">
                         ${currentUser && currentUser.role === 'admin' ? `
-                        <button class="primary-btn" onclick="document.getElementById('add-medicine-form').removeAttribute('data-edit-id'); document.getElementById('add-medicine-form').reset(); document.getElementById('add-medicine-modal').classList.add('active')">
+                        <button class="primary-btn" onclick="window.openAddMedModal()">
                             <i class="fa-solid fa-plus"></i> ${t('add_med')}
                         </button>
                         ` : ''}
@@ -2042,16 +2072,13 @@ window.renderView = async function (viewName) {
 
             if (medNamesRequested.length === 0) return;
 
-            const { data: dbStock, error: dbErr } = await _supabase.from('medicines')
-                .select('id, name, batch, qty, expiry_date')
-                .in('name', medNamesRequested)
-                .gt('qty', 0);
-
+            const { data: allRpcMeds, error: dbErr } = await _supabase.rpc('get_all_medicines');
             if (dbErr) {
                 console.error("Error fetching stock:", dbErr);
                 window.showToast("Erreur lors de la vérification du stock", "error");
                 return;
             }
+            const dbStock = (allRpcMeds || []).filter(m => medNamesRequested.includes(m.name) && m.qty > 0);
 
             // Create a local copy of stock to track allocations within this session
             const localStock = dbStock.map(m => ({ ...m, expiry: m.expiry_date }));
@@ -4478,6 +4505,21 @@ window.deleteMedicine = async function (id) {
             window.renderView('central');
         } catch (err) { console.error(err); }
     }
+};
+
+window.openAddMedModal = async function () {
+    document.getElementById('add-medicine-form').removeAttribute('data-edit-id');
+    document.getElementById('add-medicine-form').reset();
+    const { data: meds } = await _supabase.rpc('get_all_medicines');
+    const seen = new Set();
+    const dl = document.getElementById('med-names-datalist');
+    dl.innerHTML = (meds || [])
+        .filter(m => { if (seen.has(m.name)) return false; seen.add(m.name); return true; })
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(m => `<option value="${m.name}"></option>`)
+        .join('');
+    document.getElementById('add-medicine-modal').classList.add('active');
+    setTimeout(() => document.getElementById('med-name').focus(), 100);
 };
 
 window.editMedicine = async function (id) {
