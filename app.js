@@ -457,6 +457,7 @@ const defaultState = {
 let state = defaultState;
 let activeView = 'dashboard';
 let _treatedOrdersCache = [];
+let _distActiveMeds = [];
 let pagination = {
     central: { currentPage: 1, pageSize: 25, total: 0, search: '' },
     patients: { currentPage: 1, pageSize: 25, total: 0, search: '' },
@@ -1929,6 +1930,7 @@ window.renderView = async function (viewName) {
         const { data: allMedsRaw } = await _supabase.rpc('get_all_medicines');
         const _todayDist = new Date().toISOString().split('T')[0];
         const activeMeds = (allMedsRaw || []).filter(m => m.qty > 0 && (!m.expiry_date || m.expiry_date >= _todayDist));
+        _distActiveMeds = activeMeds;
 
         content += `
             ${(currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager')) ? `
@@ -2072,13 +2074,8 @@ window.renderView = async function (viewName) {
 
             if (medNamesRequested.length === 0) return;
 
-            const { data: allRpcMeds, error: dbErr } = await _supabase.rpc('get_all_medicines');
-            if (dbErr) {
-                console.error("Error fetching stock:", dbErr);
-                window.showToast("Erreur lors de la vérification du stock", "error");
-                return;
-            }
-            const dbStock = (allRpcMeds || []).filter(m => medNamesRequested.includes(m.name) && m.qty > 0);
+            // Use the same data that populated the dropdown (no second RPC call)
+            const dbStock = _distActiveMeds.filter(m => medNamesRequested.includes(m.name) && m.qty > 0);
 
             // Create a local copy of stock to track allocations within this session
             const localStock = dbStock.map(m => ({ ...m, expiry: m.expiry_date }));
