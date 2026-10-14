@@ -457,7 +457,6 @@ const defaultState = {
 let state = defaultState;
 let activeView = 'dashboard';
 let _treatedOrdersCache = [];
-let _distActiveMeds = [];
 let pagination = {
     central: { currentPage: 1, pageSize: 25, total: 0, search: '' },
     patients: { currentPage: 1, pageSize: 25, total: 0, search: '' },
@@ -1930,7 +1929,6 @@ window.renderView = async function (viewName) {
         const { data: allMedsRaw } = await _supabase.rpc('get_all_medicines');
         const _todayDist = new Date().toISOString().split('T')[0];
         const activeMeds = (allMedsRaw || []).filter(m => m.qty > 0 && (!m.expiry_date || m.expiry_date >= _todayDist));
-        _distActiveMeds = activeMeds;
 
         content += `
             ${(currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager')) ? `
@@ -2074,8 +2072,13 @@ window.renderView = async function (viewName) {
 
             if (medNamesRequested.length === 0) return;
 
-            // Use the same data that populated the dropdown (no second RPC call)
-            const dbStock = _distActiveMeds.filter(m => medNamesRequested.includes(m.name) && m.qty > 0);
+            const { data: allRpcMeds, error: dbErr } = await _supabase.rpc('get_all_medicines');
+            if (dbErr) {
+                console.error("Error fetching stock:", dbErr);
+                window.showToast("Erreur lors de la vérification du stock", "error");
+                return;
+            }
+            const dbStock = (allRpcMeds || []).filter(m => medNamesRequested.includes(m.name) && m.qty > 0);
 
             // Create a local copy of stock to track allocations within this session
             const localStock = dbStock.map(m => ({ ...m, expiry: m.expiry_date }));
@@ -2113,11 +2116,7 @@ window.renderView = async function (viewName) {
                 const totalAvailable = eligibleBatches.reduce((acc, curr) => acc + curr.qty, 0);
 
                 if (eligibleBatches.length === 0 || totalAvailable < qtyRequested) {
-                    const _nm = localStock.filter(m => m.name === medName).length;
-                    const _qi = localStock.filter(m => m.name === medName && m.qty > 0).length;
-                    const _ex = localStock.filter(m => m.name === medName && m.qty > 0 && isExpired(m.expiry)).length;
-                    const _dbg = `[trouvés:${dbStock.length} / nomOK:${_nm} / qtyOK:${_qi} / périmésFiltrés:${_ex}]`;
-                    await window.showCustomDialog({ title: "Erreur", msg: `Erreur: Stock insuffisant pour ${medName}. Disponible: ${totalAvailable} ${_dbg}`, icon: "fa-triangle-exclamation" });
+                    await window.showCustomDialog({ title: "Erreur", msg: `Erreur: Stock insuffisant pour ${medName}. Disponible: ${totalAvailable}`, icon: "fa-triangle-exclamation" });
                     valid = false;
                     break;
                 }
@@ -2188,14 +2187,11 @@ window.renderView = async function (viewName) {
                 const pStockMap = {};
                 if (pStockData) pStockData.forEach(ps => pStockMap[ps.medicine_id] = ps.qty);
 
-                // Re-fetch actual qty from medicines table before deducting (avoids RPC mismatch)
-                const { data: freshMeds } = await _supabase.from('medicines')
-                    .select('id, qty')
-                    .in('id', medIds);
-                const freshMedMap = new Map((freshMeds || []).map(m => [m.id, m.qty]));
+                // Optimized Parallel Execution — Map for O(1) lookup instead of O(n) find()
+                const dbStockMap = new Map(dbStock.map(m => [m.id, m]));
                 const medicineUpdates = batch.map(item => {
-                    const currentQty = freshMedMap.get(item.medId) ?? 0;
-                    return _supabase.from('medicines').update({ qty: currentQty - item.qty }).eq('id', item.medId);
+                    const med = dbStockMap.get(item.medId);
+                    return _supabase.from('medicines').update({ qty: med.qty - item.qty }).eq('id', item.medId);
                 });
 
                 const pharmacyStockUpserts = batch.map(item => {
